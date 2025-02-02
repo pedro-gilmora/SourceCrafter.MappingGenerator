@@ -153,6 +153,7 @@ internal sealed class TypeMeta
     private void GetObjectMembers(out bool isMemberless)
     {
         Dictionary<int, string> ids = [];
+        HashSet<string> memberNames = new(StringComparer.OrdinalIgnoreCase);
 
         var isInterface = Symbol.TypeKind == TypeKind.Interface;
 
@@ -179,13 +180,17 @@ internal sealed class TypeMeta
                     continue;
                 }
 
-                if (member.DeclaredAccessibility is not (Accessibility.Internal or Accessibility.Public))
-                    continue;
+                string memberName = member.ToNameOnly();
+
+                if (!memberNames.Add(memberName)
+                    || member is not (IPropertySymbol or IFieldSymbol)
+                    || member.DeclaredAccessibility is not (Accessibility.Internal or Accessibility.Public)
+                    || IsExcludedByMetadata(member.GetAttributes(), out var ignoreFor, out var manualMatches, out var maxDepth)) continue;
                 
-                string memberName, typeName, getPrivateFieldMethodName = "";
+                string typeName, getPrivateFieldMethodName = "";
                 bool isProperty = false, isNullable, useUnsafeAccessor = false;
                 TypeMeta type;
-                
+
                 switch (member)
                 {
                     case IPropertySymbol
@@ -196,9 +201,6 @@ internal sealed class TypeMeta
                         Type: { } memberType,
                         IsStatic: false,
                     } prop when isInterface || !impl:
-
-                        if(IsExcludedByMetadata(prop.GetAttributes(), out var ignoreFor, out var manualMatches, out var maxDepth))
-                            continue;
                         
                         var id = SymbolEqualityComparer.Default.GetHashCode(member);
                         
@@ -222,7 +224,7 @@ internal sealed class TypeMeta
                         
                         Members.TryAdd(
                             new(id,
-                                memberName = prop.ToNameOnly(),
+                                memberName,
                                 type,
                                 this, 
                                 isNullable = prop.IsNullable(),
@@ -253,11 +255,6 @@ internal sealed class TypeMeta
                         IsStatic: false,
                         IsImplicitlyDeclared: false,
                     } field:
-
-                        if(IsExcludedByMetadata(field.GetAttributes(), out ignoreFor, out manualMatches, out maxDepth))
-                            continue;
-                        
-                        memberName = field.ToNameOnly();
                         
                         if(useUnsafeAccessor = field.IsReadOnly)
                             getPrivateFieldMethodName = $"Get{SanitizedName}{memberName}";
@@ -384,12 +381,18 @@ internal sealed class TypeMeta
 
     private bool IsExcludedByMetadata(ImmutableArray<AttributeData> attributes, out HashSet<int> ignoreFor, out HashSet<int> manualMatch, out short maxDepth)
     {
+        maxDepth = 0;
+
+        if (attributes.IsDefaultOrEmpty)
+        {
+            ignoreFor = null!;
+            manualMatch = null!;  
+            return false;
+        }
+
         ignoreFor = [];
         manualMatch = [];
-        maxDepth = 0;
-        
-        if (attributes.IsDefaultOrEmpty) return false; // return;
-                        
+
         foreach (var attr in attributes)
         {
             if (attr.AttributeClass?.ToGlobalNamespaced() is not { } className) continue;

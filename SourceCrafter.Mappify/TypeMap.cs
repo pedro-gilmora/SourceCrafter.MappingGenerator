@@ -200,7 +200,7 @@ internal sealed class TypeMap
             {
                 var map = this;
 
-                if (targetMember.IsMatchingContext(sourceMember, allowLowerCase, out var isTargetAssignable, out var isSourceAssignable) 
+                if (targetMember.IsMatchingContext(sourceMember, allowLowerCase, canUseUnsafeAccessor, out var isTargetAssignable, out var isSourceAssignable) 
                     && (Id == GetId(sourceMember.Type.Id, sourceMember.Type.Id)
                         || (map = mappers.GetOrAdd(targetMember, sourceMember, ignore))._isValid))
                 {
@@ -216,7 +216,6 @@ internal sealed class TypeMap
                             requiresMethod,
                             copyMethod,
                             updateMethod,
-                            canUseUnsafeAccessor,
                             appendValue!,
                             out var memberAssignment))
                     {
@@ -231,7 +230,6 @@ internal sealed class TypeMap
                             requiresReverseMethod,
                             reverseMethod,
                             reverseUpdateMethod,
-                            canUseUnsafeAccessor, 
                             reverseAppendValue!,                           
                             out memberAssignment))
                     {
@@ -699,27 +697,9 @@ internal sealed class TypeMap
         bool useFillMethod,
         string updateMethodName,
         string copyMethod,
-        bool canUseUnsafeAccessor,
         ValueBuilder appendValue,
         out Action<StringBuilder> assigner)
     {
-        // Si se requiere unsafe accessor y no está permitido, salimos
-        if (!target.CanWrite && !target.UseUnsafeAccessor && !canUseUnsafeAccessor)
-        {
-            assigner = null!;
-            return false;
-        }
-
-        // Configurar recursividad y accessor del padre
-        bool recursive = false;
-        bool isParentValueType = false;
-
-        if (target.OwningType is { } owningType)
-        {
-            recursive = owningType.IsRecursive && target.MaxDepth > 0;
-            isParentValueType = owningType.IsValueType;
-        }
-
         // Consolidamos todos los datos en una estructura inmutable
         Assignment state = new(
             target.Type.FullName,
@@ -734,8 +714,8 @@ internal sealed class TypeMap
             target.IsNullable,
             source.Type.IsValueType,
             source.IsNullable,
-            recursive,
-            isParentValueType,
+            target.IsParentTypeRecursive,
+            target.IsParentValueType,
             target.CanWrite,
             target.MaxDepth);
 

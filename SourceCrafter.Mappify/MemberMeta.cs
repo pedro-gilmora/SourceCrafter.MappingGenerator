@@ -29,20 +29,21 @@ internal class MemberMeta(
     internal readonly bool 
         CanRead = canRead, 
         CanWrite = canWrite,
-        IsNullable = isNullable, 
-        UseUnsafeAccessor = useUnsafeAccessor;
+        IsNullable = isNullable,
+        UseUnsafeAccessor = useUnsafeAccessor, 
+        IsParentValueType = owningType?.IsKeyValueType is true;
 
     internal readonly TypeMeta Type = type;
-
-    internal readonly TypeMeta? OwningType = owningType;
 
     internal readonly int HashCode = (type.Id, name).GetHashCode();
 
     internal readonly string Name = name, UnsafeFieldAccesor = privateFieldMethodName;
 
     internal readonly short MaxDepth = maxDepth;
+    
+    internal bool IsParentTypeRecursive => owningType?.IsRecursive is true;
 
-    internal bool IsMatchingContext(in MemberMeta source, bool ignoreCase, out bool isTargetAssignable, out bool isSourceAssignable)
+    internal bool IsMatchingContext(in MemberMeta source, bool ignoreCase, bool canUseUnsafeAccessor, out bool isTargetAssignable, out bool isSourceAssignable)
     {
         if (_id != source._id
             && !Name.Equals(source.Name, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)
@@ -57,8 +58,8 @@ internal class MemberMeta(
         bool areMatechedByAttribute = source._matches.Contains(_id) || _matches.Contains(source._id),
             targetIgnoresSource = _ignores.Contains(source._id),
             sourceIgnoresTarget = source._ignores.Contains(_id),
-            targetCanBeAssigned = source.CanRead && (CanWrite || UseUnsafeAccessor),
-            sourceCanBeAssigned = CanRead && (source.CanWrite || source.UseUnsafeAccessor);        
+            targetCanBeAssigned = source.CanRead && (CanWrite || (UseUnsafeAccessor && canUseUnsafeAccessor)),
+            sourceCanBeAssigned = CanRead && (source.CanWrite || (source.UseUnsafeAccessor && canUseUnsafeAccessor));        
 
         return (isTargetAssignable = (areMatechedByAttribute || !targetIgnoresSource) && targetCanBeAssigned)
             | (isSourceAssignable = (areMatechedByAttribute || !sourceIgnoresTarget) && sourceCanBeAssigned);
