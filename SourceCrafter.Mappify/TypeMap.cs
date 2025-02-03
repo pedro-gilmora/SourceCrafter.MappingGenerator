@@ -1,24 +1,18 @@
 using System;
 using System.Collections.Generic;
-using System.Reflection;
 using System.Text;
 
 namespace SourceCrafter.Mappify;
 
 internal delegate bool CacheCreator(string item, out string cachedItem);
-
+internal delegate void MapperMethodCreator(StringBuilder code, Action<StringBuilder> itemMapper);
+enum ConversionType { None, Cast, Mapper }
 internal sealed class TypeMap
 {
-    //private MappingKind _mappingKind;
-    // private readonly Mappers _mappers;
     internal readonly int Id;
-    //private readonly bool _ignoreTargetType, _ignoreSourceType;
-    //private readonly int _targetMemberCount, _sourceMemberCount;
-    // internal bool AddTargetTryGet, AddSourceTryGet;
-    //private readonly bool isTargetRecursive, isSourceRecursive, hasComplexSTTMembers;
-    private readonly Action<StringBuilder, Action<StringBuilder>>? _mapper = null, _reverseMapper = null;
+    private readonly MapperMethodCreator? _mapper = null, _reverseMapper = null;
     private readonly Action<StringBuilder>? _members = null, _reverseMembers = null;
-    private readonly ValueBuilder _value, _reverseValue;
+    private readonly ConversionType _value, _reverseValue;
 
     private readonly TypeMeta _targetType, _sourceType;
     // private readonly CollectionMapping _collectionMap, _collectionReverseMap;
@@ -159,8 +153,8 @@ internal sealed class TypeMap
             if (scalarConversion.Exists)
             {
                 _value = (!targetType.IsInterface && scalarConversion.IsExplicit)
-                    ? Assignment.AsCast
-                    : Assignment.AsValue;
+                    ? ConversionType.Cast
+                    : ConversionType.None;
 
                 _isValid = true;
             }
@@ -168,8 +162,8 @@ internal sealed class TypeMap
             if (reverseScalarConversion.Exists)
             {
                 _reverseValue = (!sourceType.IsInterface && reverseScalarConversion.IsExplicit)
-                    ? Assignment.AsCast
-                    : Assignment.AsValue;
+                    ? ConversionType.Cast
+                    : ConversionType.None;
 
                 _isValid = true;
             }
@@ -182,9 +176,9 @@ internal sealed class TypeMap
 
         _requiresMethod = _requiresReverseMethod = true;
 
-        if (!scalarConversion.Exists) _value = Assignment.AsMapper;
+        if (!scalarConversion.Exists) _value = ConversionType.Mapper;
 
-        if (!reverseScalarConversion.Exists) _reverseValue = Assignment.AsMapper;
+        if (!reverseScalarConversion.Exists) _reverseValue = ConversionType.Mapper;
 
         _mapper = new MapperMethod(targetType, sourceType, _methodName).BuildMethods;
 
@@ -209,32 +203,16 @@ internal sealed class TypeMap
                             ? (map._requiresMethod, map._methodName, map._updateMethod, map._requiresReverseMethod, map._reverseMethodName, map._reverseUpdateMethodName, map._value, map._reverseValue)
                             : (map._requiresReverseMethod, map._reverseMethodName, map._reverseUpdateMethodName, map._requiresMethod, map._methodName, map._updateMethod, map._reverseValue, map._value);
 
-                    if (isTargetAssignable
-                        && TryBuildMemberAssignment(
-                            targetMember,
-                            sourceMember,
-                            requiresMethod,
-                            copyMethod,
-                            updateMethod,
-                            appendValue!,
-                            out var memberAssignment))
+                    if (isTargetAssignable)
                     {
                         _isValid = true;
-                        _members += memberAssignment;
+                        _members += new Assignment(targetMember,sourceMember,copyMethod, updateMethod, requiresMethod, appendValue!).Assign;
                     }
 
-                    if (isSourceAssignable
-                        && TryBuildMemberAssignment(
-                            sourceMember,
-                            targetMember,
-                            requiresReverseMethod,
-                            reverseMethod,
-                            reverseUpdateMethod,
-                            reverseAppendValue!,                           
-                            out memberAssignment))
+                    if (isSourceAssignable)
                     {
                         _isValid = true;
-                        _reverseMembers += memberAssignment;
+                        _reverseMembers += new Assignment(sourceMember, targetMember, reverseMethod, reverseUpdateMethod, requiresReverseMethod, reverseAppendValue!).Assign;
                     }
 
                     if (map.IsExtraCodeFor(this))
@@ -258,273 +236,268 @@ internal sealed class TypeMap
                !_isExtraCode;
     }
 
-    //   public bool CreateCollectionMapBuilders(
-    //       MemberMeta source,
-    //       MemberMeta target,
-    //       MemberMeta sourceItem,
-    //       MemberMeta targetItem,
-    //       in CollectionMeta sourceCollInfo,
-    //       in CollectionMeta targetCollInfo,
-    //       in CollectionMapping collMapInfo,
-    //       ValueBuilder buildItemValue,
-    //       out ValueBuilder valueBuilder,
-    //       out ObjectMapper methodBuilder)
-    //   {
-    //       var (itemType, type, isItemNullable, indexable, countable, backingArray, method, countProp, isSourceDictionary) = sourceCollInfo;
-    //       string
-    //           targetFullTypeName = target.Type.ExportFullName,
-    //           sourceFullTypeName = source.Type.ExportFullName,
-    //           targetItemFullTypeName = itemType.FullName,
-    //           copyMethodName = collMapInfo.MethodName,
-    //           updateMethodName = collMapInfo.MethodName;
+    //public bool CreateCollectionMapBuilders(
+    //    MemberMeta source,
+    //    MemberMeta target,
+    //    MemberMeta sourceItem,
+    //    MemberMeta targetItem,
+    //    in CollectionMeta sourceCollInfo,
+    //    in CollectionMapping collMapInfo,
+    //    ValueBuilder buildItemValue,
+    //    out MapperMethodCreator methodCreator,
+    //    out ValueBuilder valueBuilder)
+    //{
+    //    var (itemType, type, isItemNullable, indexable, countable, backingArray, method, countProp, isSourceDictionary) = sourceCollInfo;
 
-    //       var addMethod = collMapInfo.Method;
+    //    string
+    //        targetFullTypeName = target.Type.FullName,
+    //        sourceFullTypeName = source.Type.FullName,
+    //        targetItemFullTypeName = itemType.FullName,
+    //        copyMethodName = collMapInfo.MethodName,
+    //        updateMethodName = collMapInfo.MethodName;
 
-    //       bool createArray = collMapInfo.CreateArray, redim = collMapInfo.Redim;
+    //    var addMethod = collMapInfo.Method;
 
-    //       bool IsRecursive(out int maxDepth)
-    //       {
-    //           var isRecursive = itemType.IsRecursive;
+    //    bool createArray = collMapInfo.CreateArray,
+    //         redim = collMapInfo.Redim,
+    //         isTargetValueType = target.Type.IsValueType;
 
-    //           maxDepth = target.MaxDepth;
+    //    bool isItemTypeRecursive = itemType.IsRecursive;
 
-    //           if (itemType.IsRecursive)
-    //               maxDepth = target.MaxDepth;
+    //    bool isFor = collMapInfo.Iterator == "for";
+    //    // Consolidamos todos los datos en una estructura inmutable
 
-    //           return isRecursive;
-    //       }
+    //    Assignment state = new(target, source, copyMethodName, updateMethodName);
 
-    //       bool isFor = collMapInfo.Iterator == "for";
+    //    string
+    //        targetExportFullXmlDocTypeName = targetFullTypeName.Replace("<", "{").Replace(">", "}"),
+    //        sourceExportFullXmlDocTypeName = sourceFullTypeName.Replace("<", "{").Replace(">", "}"),
+    //        underlyingCollectionType = $"global::System.Collections.Generic.List<{targetItemFullTypeName}>()";
 
-    //       void buildCopy(StringBuilder code)
-    //       {
-    //           string
-    //               targetExportFullXmlDocTypeName = targetFullTypeName.Replace("<", "{").Replace(">", "}"),
-    //               sourceExportFullXmlDocTypeName = sourceFullTypeName.Replace("<", "{").Replace(">", "}"),
-    //               underlyingCollectionType = $"global::System.Collections.Generic.List<{targetItemFullTypeName}>()";
+    //    (string defaultType, string initType, Action<StringBuilder, string> returnExpr) = (type, target.Type.IsInterface) switch
+    //    {
+    //        (EnumerableType.ReadOnlyCollection, true) =>
+    //             ($"global::SourceCrafter.Bindings.CollectionExtensions<{targetItemFullTypeName}>.EmptyReadOnlyCollection",
+    //              underlyingCollectionType,
+    //              (code, v) => code.Append("new global::System.Collections.ObjectModel.ReadOnlyCollection<").Append(targetItemFullTypeName).Append(">(").Append(v).Append(")")),
+    //        (EnumerableType.Collection, true) =>
+    //             ($"global::SourceCrafter.Bindings.CollectionExtensions<{targetItemFullTypeName}>.EmptyCollection",
+    //              underlyingCollectionType,
+    //              (code, v) => code.Append(v)),
+    //        _ => ("new " + targetFullTypeName + "()", 
+    //              targetFullTypeName + "()", 
+    //              new Action<StringBuilder, string>((code, v) => code.Append(v)))
+    //    };
 
-    //           (string defaultType, string initType, Action<StringBuilder, string> returnExpr) = (type, target.Type.IsInterface) switch
-    //           {
-    //               (EnumerableType.ReadOnlyCollection, true) =>
-    //                   ($"global::SourceCrafter.Bindings.CollectionExtensions<{targetItemFullTypeName}>.EmptyReadOnlyCollection",
-    //                    underlyingCollectionType,
-    //                    (code, v) => code.Append("new global::System.Collections.ObjectModel.ReadOnlyCollection<").Append(targetItemFullTypeName).Append(">(").Append(v).Append(")")),
-    //               (EnumerableType.Collection, true) =>
-    //                   ($"global::SourceCrafter.Bindings.CollectionExtensions<{targetItemFullTypeName}>.EmptyCollection",
-    //                    underlyingCollectionType,
-    //                    (code, v) => code.Append(v)),
-    //               _ =>
-    //                   ("new " + targetFullTypeName + "()",
-    //                    targetFullTypeName + "()",
-    //                    new Action<StringBuilder, string>((code, v) => code.Append(v)))
-    //           };
+    //    //User? <== UserDto?
+    //    var checkNull = (!targetItem.IsNullable || !itemType.IsValueType) && sourceItem.IsNullable;
 
-    //           //User? <== UserDto?
-    //           var checkNull = (!targetItem.IsNullable || !itemType.IsValueType) && sourceItem.IsNullable;
+    //    string? suffix = (type, type) is (not EnumerableType.Array, EnumerableType.ReadOnlySpan) ? ".AsSpan()" : null;
 
-    //           string? suffix = (type, type) is (not EnumerableType.Array, EnumerableType.ReadOnlySpan) ? ".AsSpan()" : null;
+    //    void buildCopy(StringBuilder code)
+    //    {
 
-    //           if (isSourceDictionary)
-    //           {
-    //               code.Append(@"
+    //        if (isSourceDictionary)
+    //        {
+    //            code.Append(@"
     //    /// <summary>
     //    /// Creates a new instance of <see cref=""")
-    //                   .Append(targetExportFullXmlDocTypeName)
-    //                   .Append(@"""/> based from a given <see cref=""")
-    //                   .Append(sourceExportFullXmlDocTypeName)
-    //                   .Append(@"""/>
+    //                .Append(targetExportFullXmlDocTypeName)
+    //                .Append(@"""/> based from a given <see cref=""")
+    //                .Append(sourceExportFullXmlDocTypeName)
+    //                .Append(@"""/>
     //    /// </summary>
     //    /// <param name=""source"">Data source to be mapped</param>");
 
-    //               if (itemType.IsRecursive)
-    //               {
-    //                   code.Append(@"
+    //            if (isItemTypeRecursive)
+    //            {
+    //                code.Append(@"
     //    /// <param name=""depth"">Depth index for recursion control</param>
     //    /// <param name=""maxDepth"">Max of recursion to be allowed to map</param>");
-    //               }
+    //            }
 
-    //               code.Append(@"
+    //            code.Append(@"
     //    public static ")
-    //                   .Append(targetFullTypeName)
-    //                   .AddSpace()
-    //                   .Append(copyMethodName)
-    //                   .Append('(') ;
+    //                .Append(targetFullTypeName)
+    //                .AddSpace()
+    //                .Append(copyMethodName)
+    //                .Append('(');
 
-    //               if (target.Type.IsValueType) code.Append("ref ");
+    //            if (isTargetValueType) code.Append("ref ");
 
-    //               code.Append("this ")
-    //                   .Append(sourceFullTypeName)
-    //                   .Append(" source");
+    //            code.Append("this ")
+    //                .Append(sourceFullTypeName)
+    //                .Append(" source");
 
-    //               if (itemType.IsRecursive)
-    //               {
-    //                   code.Append(", int depth = 0, int maxDepth = ")
-    //                       .Append(target.MaxDepth)
-    //                       .Append(@")
+    //            if (isItemTypeRecursive)
+    //            {
+    //                code.Append(", int depth = 0, int maxDepth = ")
+    //                    .Append(target.MaxDepth)
+    //                    .Append(@")
     //    {
     //        if (depth >= maxDepth) 
     //            return ").Append(defaultType).Append(@";
     //");
-    //               }
-    //               else
-    //               {
-    //                   code.Append(@")
+    //            }
+    //            else
+    //            {
+    //                code.Append(@")
     //    {");
-    //               }
+    //            }
 
-    //               code.Append(@"
+    //            code.Append(@"
     //        var target = ").Append(defaultType).Append(@";
 
     //        foreach (var item in source)
     //        {
     //            target[");
 
-    //               //keyValueMapping!.Key.Invoke(code, "item");
+    //            //keyValueMapping!.Key.Invoke(code, "item");
 
-    //               code.Append("] = ");
+    //            code.Append("] = ");
 
-    //               //keyValueMapping!.Value(code, "item");
+    //            //keyValueMapping!.Value(code, "item");
 
-    //               code.Append(@";
+    //            code.Append(@";
     //        }
 
     //        return target;
     //    }
     //");
-    //               return;
-    //           }
+    //            return;
+    //        }
 
-    //           code.Append(@"
+    //        code.Append(@"
     //    /// <summary>
     //    /// Creates a new instance of <see cref=""").Append(targetExportFullXmlDocTypeName).Append(@"""/> based from a given <see cref=""").Append(sourceExportFullXmlDocTypeName).Append(@"""/>
     //    /// </summary>
     //    /// <param name=""source"">Data source to be mapped</param>");
 
-    //           if (itemType.IsRecursive)
-    //               code.Append(@"
+    //        if (isItemTypeRecursive)
+    //            code.Append(@"
     //    /// <param name=""depth"">Depth index for recursion control</param>
     //    /// <param name=""maxDepth"">Max of recursion to be allowed to map</param>");
 
-    //           code.Append(@"
+    //        code.Append(@"
     //    public static ").Append(targetFullTypeName).AddSpace().Append("Update(");
 
-    //           if (target.Type.IsValueType) code.Append("ref ");
+    //        if (target.Type.IsValueType) code.Append("ref ");
 
-    //           code.Append("this ").Append(sourceFullTypeName).Append(@" target");
+    //        code.Append("this ").Append(sourceFullTypeName).Append(@" target");
 
-    //           if (itemType.IsRecursive)
-    //           {
-    //               code.Append(", int depth = 0, int maxDepth = ").Append(target.MaxDepth).Append(@")
+    //        if (isItemTypeRecursive)
+    //        {
+    //            code.Append(", int depth = 0, int maxDepth = ").Append(target.MaxDepth).Append(@")
     //    {
     //        if (depth >= maxDepth) 
     //            return ");
 
-    //               if (createArray)
-    //               {
-    //                   code.Append("global::System.Array.Empty<").Append(targetItemFullTypeName).Append(">()");
-    //               }
-    //               else
-    //               {
-    //                   code.Append(defaultType);
-    //               }
+    //            if (createArray)
+    //            {
+    //                code.Append("global::System.Array.Empty<").Append(targetItemFullTypeName).Append(">()");
+    //            }
+    //            else
+    //            {
+    //                code.Append(defaultType);
+    //            }
 
-    //               code.Append(@";
+    //            code.Append(@";
     //");
-    //           }
-    //           else
-    //           {
-    //               code.Append(@")
+    //        }
+    //        else
+    //        {
+    //            code.Append(@")
     //    {");
-    //           }
+    //        }
 
-    //           if (createArray)
-    //           {
-    //               if (redim)
-    //               {
-    //                   code.Append(@"
+    //        if (createArray)
+    //        {
+    //            if (redim)
+    //            {
+    //                code.Append(@"
     //        int len = 0, aux = 16;
     //        var target = new ").Append(targetItemFullTypeName).Append(@"[aux];
     //");
-    //               }
-    //               else
-    //               {
-    //                   code.Append(@"
+    //            }
+    //            else
+    //            {
+    //                code.Append(@"
     //        int len = ");
 
-    //                   if (isFor)
-    //                   {
-    //                       code.Append("source.").Append(countProp);
-    //                   }
-    //                   else
-    //                   {
-    //                       code.Append(0);
-    //                   }
+    //                if (isFor)
+    //                {
+    //                    code.Append("source.").Append(countProp);
+    //                }
+    //                else
+    //                {
+    //                    code.Append(0);
+    //                }
 
-    //                   code.Append(@";
+    //                code.Append(@";
     //        var target = new ").Append(targetItemFullTypeName).Append('[');
 
-    //                   if (isFor)
-    //                   {
-    //                       code.Append("len");
-    //                   }
-    //                   else
-    //                   {
-    //                       code.Append("source.").Append(countProp);
-    //                   }
+    //                if (isFor)
+    //                {
+    //                    code.Append("len");
+    //                }
+    //                else
+    //                {
+    //                    code.Append("source.").Append(countProp);
+    //                }
 
-    //                   code.Append(@"];
+    //                code.Append(@"];
     //");
-    //               }
-    //           }
-    //           else
-    //           {
-    //               code.Append(@"
+    //            }
+    //        }
+    //        else
+    //        {
+    //            code.Append(@"
     //        var target = new ").Append(initType).Append(';').Append(@"
     //");
-    //           }
+    //        }
 
-    //           if (isFor)
-    //           {
-    //               code.Append(@"
+    //        if (isFor)
+    //        {
+    //            code.Append(@"
     //        for (int i = 0; i < len; i++)
     //        {
     //            target[i] = ");
 
-    //               buildItemValue(code, target, source);
+    //            buildItemValue(code);
 
-    //               code.Append(@";
+    //            code.Append(@";
     //        }
 
     //        return target").Append(suffix).Append(@";
     //    }
     //");
-    //           }
-    //           else
-    //           {
-    //               code.Append(@"
+    //        }
+    //        else
+    //        {
+    //            code.Append(@"
     //        foreach (var item in source)
     //        {");
 
-    //               if (createArray)
-    //               {
-    //                   code.Append(@"
+    //            if (createArray)
+    //            {
+    //                code.Append(@"
     //            target[len");
 
-    //                   if (!redim)
-    //                   {
-    //                       code.Append("++");
-    //                   }
+    //                if (!redim)
+    //                {
+    //                    code.Append("++");
+    //                }
 
-    //                   code.Append("] = ");
+    //                code.Append("] = ");
 
-    //                   buildItemValue(code, target, source);
+    //                buildItemValue(code);
 
-    //                   code.Append(";");
+    //                code.Append(";");
 
-    //                   if (redim)
-    //                   {
-    //                       //redim array
-    //                       code.Append(@"
+    //                if (redim)
+    //                {
+    //                    //redim array
+    //                    code.Append(@"
 
     //            if (aux == ++len)
     //                global::System.Array.Resize(ref target, aux *= 2);
@@ -533,56 +506,58 @@ internal sealed class TypeMap
     //        return (len < aux ? target[..len] : target)").Append(suffix).Append(@";
     //    }
     //");
-    //                   }
-    //                   //normal ending
-    //                   else
-    //                   {
-    //                       code.Append(@"
+    //                }
+    //                //normal ending
+    //                else
+    //                {
+    //                    code.Append(@"
     //        }
 
     //        return target").Append(suffix).Append(@";
     //    }
     //");
-    //                   }
-    //               }
-    //               else
-    //               {
-    //                   code.Append(@"
+    //                }
+    //            }
+    //            else
+    //            {
+    //                code.Append(@"
     //            target.").Append(addMethod);
 
 
-    //                   buildItemValue(code, target, source);
+    //                buildItemValue(code);
 
-    //                   code.Append(@");
+    //                code.Append(@");
     //        }
 
     //        return ");
 
-    //                   returnExpr(code, "target");
+    //                returnExpr(code, "target");
 
-    //                   code.Append(@";
+    //                code.Append(@";
     //    }
     //");
-    //               }
-    //           }
-    //       }
+    //            }
+    //        }
+    //    }
 
-    //       valueBuilder = (code, target, source, checkNull) =>
-    //       {
-    //           code.Append(copyMethodName).Append("(").Append(value);
+    //    void value(in Assignment state, StringBuilder code, bool checkNull = false)
+    //    {
+    //        code.Append(copyMethodName).Append("(");
 
-    //           if (IsRecursive(out var maxDepth))
-    //           {
-    //               code.Append(", __l - 1");
-    //           }
+    //        if (isItemTypeRecursive)
+    //        {
+    //            code.Append("__l - 1");
+    //        }
 
-    //           code.Append(")");
-    //       };
+    //        code.Append(")");
+    //    };
 
-    //       methodBuilder = buildCopy;
+    //    valueBuilder = value;
 
-    //       return true;
-    //   }
+    //    methodCreator = buildCopy;
+
+    //    return true;
+    //}
 
     readonly struct MapperMethod(
         TypeMeta targetType,
@@ -691,46 +666,6 @@ internal sealed class TypeMap
         return false;
     }
 
-    private static bool TryBuildMemberAssignment(
-        MemberMeta target,
-        MemberMeta source,
-        bool useFillMethod,
-        string updateMethodName,
-        string copyMethod,
-        ValueBuilder appendValue,
-        out Action<StringBuilder> assigner)
-    {
-        // Consolidamos todos los datos en una estructura inmutable
-        Assignment state = new(
-            target.Type.FullName,
-            "." + target.Name,
-            source.Type.FullName,
-            "." + source.Name,
-            updateMethodName,
-            copyMethod,
-            target.UnsafeFieldAccesor,
-            target.UseUnsafeAccessor,
-            target.Type.IsValueType,
-            target.IsNullable,
-            source.Type.IsValueType,
-            source.IsNullable,
-            target.IsParentTypeRecursive,
-            target.IsParentValueType,
-            target.CanWrite,
-            target.MaxDepth);
-
-        // Selección de la asignación según los casos
-        assigner = target.Type.IsMemberless && target.Type.IsPrimitive
-            ? code => state.DefaultAssignment(code, appendValue)
-            : !source.Type.IsMemberless && (target.IsNullable || source.IsNullable)
-                ? code => state.NullableAssignment(code, appendValue)
-                : useFillMethod
-                    ? code => state.UpdateMethodAssignment(code, appendValue)
-                    : code => state.DefaultAssignment(code, appendValue);
-
-        return true;
-    }
-
     //private static CollectionMapping BuildCollectionMapping(CollectionMeta source, CollectionMeta target,
     //    string copyMethodName)
     //{
@@ -830,7 +765,7 @@ internal readonly record struct CollectionMeta(
     }
 };
 
-internal delegate void ValueBuilder(in Assignment state, StringBuilder code, bool preventNullCheck = false);
+internal delegate void ValueBuilder(StringBuilder code, bool preventNullCheck = false);
 
 internal record struct CollectionMapping(
     bool CreateArray,
@@ -839,262 +774,3 @@ internal record struct CollectionMapping(
     bool Redim,
     string? Method,
     string MethodName);
-
-internal readonly struct Assignment(
-    string targetTypeFullName,
-    string targetMemberName,
-    string sourceTypeFullName,
-    string sourceMemberName,
-    string copyMethodName,
-    string updateMethodName,
-    string unsafeFieldAccesor,
-    bool useUnsafeAccessor,
-    bool isTargetValueType,
-    bool isTargetNullable,
-    bool isSourceValueType,
-    bool isSourceNullable,
-    bool recursive,
-    bool isParentValueType,
-    bool canWrite,
-    int maxDepth)
-{
-    private readonly string 
-        sourceMemberName = sourceMemberName, 
-        copyMethodName = copyMethodName, 
-        targetTypeFullName = targetTypeFullName, 
-        sourceTypeFullName = sourceTypeFullName;
-
-    private readonly bool 
-        isTargetValueType = isTargetValueType,
-        isSourceValueType = isSourceValueType,
-        isSourceNullable = isSourceNullable,
-        isTargetNullable = isTargetNullable;
-
-    internal void DirectAssignment(StringBuilder code, ValueBuilder appendValue)
-    {
-        code.Append(@"
-        target")
-            .Append(targetMemberName)
-            .Append(" = ");
-
-        appendValue(this, code);
-        
-        code.Append(";");
-    }
-
-    internal void NullableAssignment(StringBuilder code, ValueBuilder appendValue)
-    {
-        if (ShouldAppendNewLine(code))
-            code.AppendLine();
-
-        if (isSourceNullable)
-        {
-            code.Append(@"
-        if (source")
-                .Append(sourceMemberName)
-                .Append(AppendNullCheck(isSourceValueType, isSourceNullable));
-
-            if (recursive)
-                code.Append(" && __l <= ").Append(maxDepth);
-
-            code.Append(") ");
-        }
-        if (isTargetNullable)
-        {
-
-            code.Append(@"
-");
-            if(isSourceNullable) code.Append("    ");
-            
-            code.Append("        if(target")
-                .Append(targetMemberName)
-                .Append(AppendNullCheck(isTargetValueType, isTargetNullable))
-                .Append(") ");
-
-            AppendAssignmentCall(code);
-
-            code.Append(@";
-");
-            if(isSourceNullable) code.Append("    ");
-            
-            code.Append("        else ");
-
-            if (!canWrite && useUnsafeAccessor)
-                AppendTargetValue(code);
-            else
-                code.Append("target").Append(targetMemberName);
-
-            code.Append(" = ");
-
-            appendValue(this, code, true);
-        }
-        else
-        {
-            AppendAssignmentCall(code);
-        }
-
-        code.Append(";");
-
-        if (isSourceNullable)
-        {
-            code.Append(@"
-        else ");
-
-            if (useUnsafeAccessor)
-                AppendTargetValue(code);
-            else
-                code.Append("target").Append(targetMemberName);
-
-            code.Append(" = default;");
-        }
-
-        code.AppendLine();
-    }
-
-    internal void UpdateMethodAssignment(StringBuilder code, ValueBuilder _)
-    {
-        code.Append(@"
-        ");
-
-        AppendAssignmentCall(code);
-
-        code.Append(@";");
-    }
-
-    internal void DefaultAssignment(StringBuilder code, ValueBuilder appendValue)
-    {
-        code.Append(@"
-        ");
-
-        if (useUnsafeAccessor)
-            AppendTargetValue(code);
-        else
-            code.Append("target").Append(targetMemberName);
-        
-        code.Append(" = ");
-
-        appendValue(this, code);
-        
-        code.Append(";");
-    }
-
-    internal void AppendTargetValue(StringBuilder code)
-    {
-        code.Append(unsafeFieldAccesor).Append("(");
-
-        if (isParentValueType) code.Append("ref ");
-
-        code.Append("target)");
-    }
-
-    private void AppendAssignmentCall(StringBuilder code)
-    {
-        code.Append(updateMethodName).Append('(');
-
-        if (useUnsafeAccessor)
-        {
-            if (isTargetValueType)
-            {
-                code.Append("ref ");
-
-                if (isTargetNullable)
-                {
-                    code.Append("UnNull(ref ");
-
-                    AppendTargetValue(code);
-
-                    code.Append(")");
-                }
-                else
-                {
-                    AppendTargetValue(code);
-                }
-            }
-            else
-            {
-                AppendTargetValue(code);
-
-                if (isTargetNullable)
-                    code.Append('!');
-            }
-        }
-        else
-        {
-            if (isTargetValueType)
-                code.Append("ref ");
-
-            code.Append("target").Append(targetMemberName);
-        }
-
-        code.Append(", source").Append(sourceMemberName);
-
-        if (isSourceNullable)
-            code.Append(isSourceValueType ? ".Value" : "!");
-
-        if (recursive)
-            code.Append(", __l");
-
-        code.Append(")");
-    }
-
-    internal static void AsValue(in Assignment state, StringBuilder code, bool dontChecknull = false)
-    {
-        //code.AppendLine("/*").AppendLine(state.ToString()).Append("*/");
-        code.Append("source").Append(state.sourceMemberName);
-
-        if (dontChecknull || !state.isSourceNullable || state.isTargetNullable) return;
-
-        code.Append(" ?? default!");
-    }
-
-    internal static void AsCast(in Assignment state, StringBuilder code, bool dontCheckNull = false)
-    {
-        code.Append('(')
-            .Append(state.targetTypeFullName)
-            .Append(")");
-
-        //code.Append("/*").Append(state).Append("*/");
-
-        if (!dontCheckNull && !state.isTargetNullable && state.isSourceNullable && state.isSourceValueType)
-            code.Append("(source")
-                .Append(state.sourceMemberName)
-                .Append(" ?? default!)");
-        /*(").Append(state.sourceTypeFullName).Append(")*/
-        else
-            code.Append("source")
-                .Append(state.sourceMemberName);
-    }
-
-    internal static void AsMapper(in Assignment state, StringBuilder code, bool dontCheckNull = false)
-    {
-        code.Append("source").Append(state.sourceMemberName);
-
-        if (!dontCheckNull && state.isSourceNullable) code.Append("?");
-
-        code.Append(".").Append(state.copyMethodName).Append("()");
-    }
-
-    private static bool ShouldAppendNewLine(StringBuilder code) => code[^1] is ';' or '{';
-
-    private static string AppendNullCheck(bool isValueType, bool isNullable) =>
-        isValueType && isNullable ? ".HasValue" : " is not null";
-
-    public override string ToString()
-    {
-        return $@"targetTypeFullName={targetTypeFullName},
-targetMemberName={targetMemberName},
-sourceTypeFullName={sourceTypeFullName},
-sourceMemberName={sourceMemberName},
-useUnsafeAccessor={useUnsafeAccessor},
-isTargetValueType={isTargetValueType},
-isTargetNullable={isTargetNullable},
-isSourceNullable={isSourceNullable},
-isSourceValueType={isSourceValueType},
-recursive={recursive},
-isParentValueType={isParentValueType},
-copyMethodName={copyMethodName},
-updateMethodName={updateMethodName},
-unsafeFieldAccesor={unsafeFieldAccesor},
-maxDepth={maxDepth}";
-    }
-}

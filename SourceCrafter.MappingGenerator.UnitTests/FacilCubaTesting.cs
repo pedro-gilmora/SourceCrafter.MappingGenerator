@@ -6,6 +6,8 @@ using System.Xml.Linq;
 using FluentAssertions;
 using SourceCrafter.Mvvm.Attributes;
 using SourceCrafter.Mappify.Attributes;
+using Riok.Mapperly.Abstractions;
+using SourceCrafter.UnitTests;
 
 
 namespace SourceCrafter.Mappify.UnitTests;
@@ -36,6 +38,12 @@ namespace SourceCrafter.Mappify.UnitTests;
 //    }
 //}
 
+
+//[Mapper]
+//public partial class UserMapper
+//{
+//    public partial UserDto UserToUserDto(User car);
+//}
 [Reactive]
 public interface IAppUser
 {
