@@ -39,41 +39,13 @@ internal sealed class TypeMap
         // ReSharper disable once RedundantAssignment
         ref TypeMap @this,
         int id,
-        TypeMeta source,
-        TypeMeta target,
-        GenerateOn ignore,
-        bool sourceIsNullable,
-        bool targetIsNullable,
-        bool dictionaryContext
-    ) :
-
-        this(
-            mappers,
-            ref @this,
-            id,
-            new(target.Id, "target", target, isNullable: targetIsNullable),
-            new(source.Id, "source", source, isNullable: sourceIsNullable),
-            ignore, dictionaryContext)
-    {
-    }
-
-#pragma warning disable CS8618, CS9264
-    internal TypeMap(
-#pragma warning restore CS8618, CS9264
-        Mappers mappers,
-        // ReSharper disable once RedundantAssignment
-        ref TypeMap @this,
-        int id,
-        MemberMeta target,
-        MemberMeta source,
+        TypeMeta sourceType,
+        TypeMeta targetType,
         GenerateOn ignore,
         bool dictionaryContext
     )
     {
         @this = this;
-
-        var sourceType = source.Type;
-        var targetType = target.Type;
 
         var sameType = _areSameType = targetType.Id == sourceType.Id;
 
@@ -196,7 +168,7 @@ internal sealed class TypeMap
 
                 if (targetMember.IsMatchingContext(sourceMember, allowLowerCase, canUseUnsafeAccessor, out var isTargetAssignable, out var isSourceAssignable) 
                     && (Id == GetId(sourceMember.Type.Id, sourceMember.Type.Id)
-                        || (map = mappers.GetOrAdd(targetMember, sourceMember, ignore))._isValid))
+                        || (map = mappers.GetOrAdd(targetMember.Type, sourceMember.Type, ignore))._isValid))
                 {
                     var (requiresMethod, copyMethod, updateMethod, requiresReverseMethod, reverseMethod, reverseUpdateMethod, appendValue, reverseAppendValue) =
                         (map._targetType.Id, map._sourceType.Id) == (targetMember.Type.Id, sourceMember.Type.Id)

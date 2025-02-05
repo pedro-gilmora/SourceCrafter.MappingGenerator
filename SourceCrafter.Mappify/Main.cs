@@ -75,13 +75,10 @@ public class GeneratedMappers : IIncrementalGenerator
                     var i = 0;
 
 
-                    foreach (var item in globalConfig.Concat(onClass))
+                    foreach (var (a, b, mapKind, ignore) in globalConfig.Concat(onClass))
                     {
                         mappers
-                            .GetOrAdd(
-                                mappers.CreateMember(item.a, "source"), 
-                                mappers.CreateMember(item.b, "target"),
-                                item.ignore)
+                            .GetOrAdd(mappers.Types.GetOrAdd(a),  mappers.Types.GetOrAdd(b), ignore)
                             .BuildFile(ctx.AddSource, i++);
                     }
 
