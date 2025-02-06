@@ -6,6 +6,8 @@ using System;
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Linq;
+using System.Threading;
+
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
@@ -70,16 +72,15 @@ public class GeneratedMappers : IIncrementalGenerator
 
                 try
                 {
-                    Mappers mappers = new(compilation);
+                    Mappers mappers = new(compilation, ctx.AddSource);
         
                     var i = 0;
 
 
                     foreach (var (a, b, mapKind, ignore) in globalConfig.Concat(onClass))
                     {
-                        mappers
-                            .GetOrAdd(mappers.Types.GetOrAdd(a),  mappers.Types.GetOrAdd(b), ignore)
-                            .BuildFile(ctx.AddSource, i++);
+                        mappers.GetOrAdd(mappers.Types.GetOrAdd(a), mappers.Types.GetOrAdd(b), ignore, ref i);
+                        i++;
                     }
 
                     mappers.RenderExtra(ctx.AddSource);

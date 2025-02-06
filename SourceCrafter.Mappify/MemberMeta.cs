@@ -43,7 +43,7 @@ internal class MemberMeta(
     
     internal bool IsParentTypeRecursive => owningType?.IsRecursive is true;
 
-    internal bool IsMatchingContext(in MemberMeta source, bool ignoreCase, bool canUseUnsafeAccessor, out bool isTargetAssignable, out bool isSourceAssignable)
+    internal bool Mateches(in MemberMeta source, bool ignoreCase, bool canUseUnsafeAccessor, out bool isTargetAssignable, out bool isSourceAssignable)
     {
         if (_id != source._id
             && !Name.Equals(source.Name, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)

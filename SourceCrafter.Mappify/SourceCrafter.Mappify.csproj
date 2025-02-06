@@ -11,6 +11,10 @@
     </PropertyGroup>
 
     <ItemGroup>
+      <Compile Remove="Assignment.cs" />
+    </ItemGroup>
+
+    <ItemGroup>
         <PackageReference Include="Microsoft.CodeAnalysis.Common" Version="4.7.0" />
         <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.7.0" />
         <PackageReference Include="System.Memory" Version="4.5.5" PrivateAssets="all" GeneratePathProperty="true" />
