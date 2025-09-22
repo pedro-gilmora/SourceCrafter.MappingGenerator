@@ -6,8 +6,6 @@ using System.Text;
 
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using SourceCrafter.Helpers;
-using SourceCrafter.Mappify.Helpers;
 
 namespace SourceCrafter.Mappify;
 
@@ -27,8 +25,9 @@ internal sealed partial class Mappers(Compilation compilation, Action<string, st
         ref int index, 
         bool dictionaryContext = false)
     {
-
-        var mapperId = GetId(sourceType.Id, targetType.Id);
+        bool sameType = targetType.Id == sourceType.Id, isValid = true;
+     
+        var mapperId = GetId(sourceType.Id, (sameType ? sourceType : targetType).Id);
 
         ref var typeMap = ref GetOrAddDefault(mapperId, out var exists);
 
@@ -37,7 +36,6 @@ internal sealed partial class Mappers(Compilation compilation, Action<string, st
             return typeMap;
         }
 
-        bool sameType = targetType.Id == sourceType.Id, isValid = true;
         BuildValue value = AsValue, reverseValue = AsValue;
         Action<StringBuilder>? method = null, reverseMethod = null;
 
@@ -55,56 +53,7 @@ internal sealed partial class Mappers(Compilation compilation, Action<string, st
 
         if (/*_isCollection = */sourceType.IsCollection || targetType.IsCollection)
         {
-            return typeMap = CreateMap(false);
-            //     var itemMap = mappers.GetOrAdd(
-            //         sourceType.Collection.ItemType, 
-            //         targetType.Collection.ItemType, 
-            //         ignore,
-            //         sourceType.Collection.IsItemNullable, 
-            //         targetType.Collection.IsItemNullable);
-            //
-            //     if (!itemMap._isValid ||
-            //         !(sourceType.Collection.ItemType.HasZeroArgsCtor && targetType.Collection.ItemType.HasZeroArgsCtor))
-            //     {
-            //         _isValid = false;
-            //
-            //         return;
-            //     }
-            //
-            //     itemMap._targetType.IsRecursive |= itemMap._targetType.IsRecursive;
-            //     itemMap._sourceType.IsRecursive |= itemMap._sourceType.IsRecursive;
-            //
-            //     // var collectionMap = BuildCollectionMapping(sourceType.Collection, targetType.Collection, _methodName);
-            //     // var collectionReverseMap = BuildCollectionMapping(targetType.Collection, sourceType.Collection, _reverseMethodName);
-            //
-            //     MemberMeta  
-            //         sourceItemMember = new(id, "sourceItem", itemMap._sourceType),
-            //         targetItemMember = new(id, "targetItem", itemMap._targetType);
-            //
-            //     if (sourceItemMember.Discard(targetItemMember, true, out var sourceCtx, out var targetCtx))
-            //     {
-            //         _isValid = false;
-            //         return;
-            //     }
-            //
-            //     if (_isValid = !targetCtx.Ignore)
-            //     {
-            //         _requiresMapperMethod = true;
-            //         
-            //         _value = (code, sourceItem, targetItem) => 
-            //             code.Append(@"
-            // ").Append(_methodName).Append('(').Append(targetItem).Append(", ").Append(sourceItem).Append(')');
-            //     };
-            //
-            //     if (!(_isValid |= !sameType && !sourceCtx.Ignore)) return;
-            //
-            //     _requiresReverseMapperMethod = true;
-            //     
-            //         _reverseValue = (code, sourceItem, targetItem) => 
-            //             AppendMethodCall(code, sourceType.IsValueType, _reverseMethodName, sourceItem).Append(", ").Append(targetItem).Append(')');
-            //         
-            //
-            //     return;
+            return typeMap = CreateMap(false);  
         }
 
         if (targetType.HasConversion(sourceType, out var scalarConversion, out var reverseScalarConversion))
@@ -157,7 +106,7 @@ internal sealed partial class Mappers(Compilation compilation, Action<string, st
 
                 int sourceTypeId = sourceMember.Type.Id, targetTypeId = targetMember.Type.Id;
 
-                if (!targetMember.Mateches(sourceMember, allowLowerCase, canUseUnsafeAccessor, out var isTargetAssignable, out var isSourceAssignable)
+                if (!targetMember.Matches(sourceMember, allowLowerCase, canUseUnsafeAccessor, out var isTargetAssignable, out var isSourceAssignable)
                     || mapperId != GetId(targetTypeId, sourceTypeId)
                         && !(map = GetOrAdd(targetMember.Type, sourceMember.Type, ignore, ref index)).IsValid)
                 {
@@ -205,14 +154,13 @@ internal sealed partial class Mappers(Compilation compilation, Action<string, st
 
             code.Insert(0, @"namespace SourceCrafter.Mappify;
 
-    public static partial class Mappings
-    {");
+public static partial class Mappings
+{");
             addSource(
-                $"{index++}_{sourceType.Symbol.MetadataName}To{targetType.Symbol.MetadataName}",
+                $"{index++.ToString().PadLeft(3,'0')}_{sourceType.SanitizedName}_{targetType.SanitizedName}.map.g",
                 code.Append("}").ToString());
         }
     }
-
 
     private static Action<StringBuilder> BuildMethodBuilder(TypeMeta targetType, TypeMeta sourceType, string methodName, List<Action<StringBuilder>> members)
     {
@@ -346,7 +294,7 @@ internal sealed partial class Mappers(Compilation compilation, Action<string, st
             sourceType.Id,
             name,
             sourceType,
-            isNullable: item.IsNullable());
+            isNullable: item.IsNullable);
     }
     internal static int GetId(int typeAId, int typeBId) =>
         (Math.Min(typeAId, typeBId), Math.Max(typeAId, typeBId)).GetHashCode();
@@ -423,6 +371,7 @@ public static partial class Mappings
 
                 code.Append(") ");
             }
+
             if (isTargetNullable)
             {
 

@@ -1,18 +1,12 @@
 ﻿//Testing utils
 using Xunit;
-using System.Text;
 
 // Analyzer 
-using SourceCrafter.Bindings;
+using SourceCrafter.Mappify;
 
 //Testing purpose
 using FluentAssertions;
-using System.Collections.Immutable;
-using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
-using SourceCrafter.Bindings.Attributes;
-using SourceCrafter.Bindings.Helpers;
-using SourceCrafter.Bindings.Constants;
 using SourceCrafter.UnitTests;
 
 namespace SourceCrafter.Bindings.UnitTests;

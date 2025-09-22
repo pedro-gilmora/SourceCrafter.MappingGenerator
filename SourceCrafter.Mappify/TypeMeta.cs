@@ -1,16 +1,16 @@
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+
+
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Data;
 using System.Linq;
 using System.Security.Permissions;
 using System.Text;
 using System.Xml.Linq;
-
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
-using SourceCrafter.Helpers;
-using SourceCrafter.Mappify.Helpers;
 
 namespace SourceCrafter.Mappify;
 
@@ -50,9 +50,9 @@ internal sealed class TypeMeta
     // internal readonly bool AllowNull;
 
     internal TypeMeta(
-        TypeSet types,
         // ReSharper disable once RedundantAssignment
         ref TypeMeta @this,
+        TypeSet types,
         int typeAId,
         ITypeSymbol membersSource,
         ITypeSymbol? implementation = null,
@@ -62,7 +62,7 @@ internal sealed class TypeMeta
 
         _unsafeAccesors = types.UnsafeAccessors;
 
-        var type = (implementation ?? membersSource).AsNonNullable();
+        var type = (implementation ?? membersSource).ToNonNullable;
         Symbol = membersSource;
         Types = types;
         Id = typeAId;
@@ -79,7 +79,7 @@ internal sealed class TypeMeta
         FullNonGenericName = Symbol.ToGlobalNonGenericNamespace();
         IsKeyValueType = Name is "KeyValuePair";
         IsObject = SymbolEqualityComparer.Default.Equals(Symbol, types.Compilation.ObjectType);
-        IsPrimitive = type.IsPrimitive();
+        IsPrimitive = type.IsPrimitive;
 
         HasZeroArgsCtor =
             (type is INamedTypeSymbol { InstanceConstructors: { Length: > 0 } ctors } //Has instance constructors
@@ -87,8 +87,8 @@ internal sealed class TypeMeta
 
             || implementation?.Kind is SymbolKind.ErrorType;
 
-        (SanitizedName, ExportFullName) = membersSource.AsNonNullable() is { } memberSource
-            ? (types.SanitizeName(memberSource), ExportFullName = memberSource.AsNonNullable().ToGlobalNamespaced().TrimEnd('?'))
+        (SanitizedName, ExportFullName) = membersSource.ToNonNullable is { } memberSource
+            ? (types.SanitizeName(memberSource), ExportFullName = memberSource.ToNonNullable.ToGlobalNamespaced().TrimEnd('?'))
             : (types.SanitizeName(type), ExportFullName = FullName);
 
         IsCollection = IsEnumerableType(FullNonGenericName, type, out Collection);
@@ -104,7 +104,7 @@ internal sealed class TypeMeta
     internal bool HasConversion(
         TypeMeta source,
         out ScalarConversion scalarConversion,
-        out ScalarConversion reverseScalarConversion) 
+        out ScalarConversion reverseScalarConversion)
         => HasConversion(source, this, out scalarConversion)
            | HasConversion(this, source, out reverseScalarConversion);
 
@@ -165,7 +165,7 @@ internal sealed class TypeMeta
 
         void getMembers(ITypeSymbol typeSymbol, bool isFirstLevel = true)
         {
-            if (typeSymbol.AsNonNullable().IsPrimitive())
+            if (typeSymbol.ToNonNullable.IsPrimitive)
                 return;
 
             var members = typeSymbol.GetMembers();
@@ -174,7 +174,7 @@ internal sealed class TypeMeta
 
             foreach (var member in members)
             {
-                if (member is IFieldSymbol { AssociatedSymbol: IPropertySymbol autoProp})
+                if (member is IFieldSymbol { AssociatedSymbol: IPropertySymbol autoProp })
                 {
                     ids.Add(SymbolEqualityComparer.Default.GetHashCode(autoProp), autoProp.ToNameOnly());
                     continue;
@@ -186,7 +186,7 @@ internal sealed class TypeMeta
                     || member is not (IPropertySymbol or IFieldSymbol)
                     || member.DeclaredAccessibility is not (Accessibility.Internal or Accessibility.Public)
                     || IsExcludedByMetadata(member.GetAttributes(), out var ignoreFor, out var manualMatches, out var maxDepth)) continue;
-                
+
                 string typeName, getPrivateFieldMethodName = "";
                 bool isProperty = false, isNullable, useUnsafeAccessor = false;
                 TypeMeta type;
@@ -201,46 +201,46 @@ internal sealed class TypeMeta
                         Type: { } memberType,
                         IsStatic: false,
                     } prop when isInterface || !impl:
-                        
+
                         var id = SymbolEqualityComparer.Default.GetHashCode(member);
-                        
+
                         type = Types.GetOrAdd(memberType);
 
                         typeName = type.FullName;
 
-                        if(useUnsafeAccessor = ids.TryGetValue(id, out var fieldName) && 
-                            (prop is not { IsReadOnly: false, IsIndexer : false, SetMethod.IsInitOnly: false }
+                        if (useUnsafeAccessor = ids.TryGetValue(id, out var fieldName) &&
+                            (prop is not { IsReadOnly: false, IsIndexer: false, SetMethod.IsInitOnly: false }
                              || type is { IsValueType: true, IsMemberless: false }))
                         {
                             getPrivateFieldMethodName = $"Get{SanitizedName}{fieldName}";
                         }
 
                         var canRead = prop.GetMethod is not null;
-                        var canWrite = prop.SetMethod is { IsInitOnly: false } ;
-                        
-                        if(!canRead && !canWrite && !useUnsafeAccessor) continue;
+                        var canWrite = prop.SetMethod is { IsInitOnly: false };
+
+                        if (!canRead && !canWrite && !useUnsafeAccessor) continue;
 
                         isProperty = true;
-                        
+
                         Members.TryAdd(
                             new(id,
                                 memberName,
                                 type,
-                                this, 
-                                isNullable = prop.IsNullable(),
+                                this,
+                                isNullable = prop.IsNullable,
                                 manualMatches,
                                 ignoreFor,
                                 canRead,
-                                canWrite, 
-                                useUnsafeAccessor, 
+                                canWrite,
+                                useUnsafeAccessor,
                                 maxDepth,
                                 getPrivateFieldMethodName));
-                
+
                         if (useUnsafeAccessor)
                         {
                             addFieldUnsafeAccessor();
 
-                            if (memberType.IsValueType && memberType.IsNullable())
+                            if (memberType.IsValueType && memberType.IsNullable)
                             {
                                 addNullUnsafeAccessor(type);
                             }
@@ -255,32 +255,32 @@ internal sealed class TypeMeta
                         IsStatic: false,
                         IsImplicitlyDeclared: false,
                     } field:
-                        
-                        if(useUnsafeAccessor = field.IsReadOnly)
+
+                        if (useUnsafeAccessor = field.IsReadOnly)
                             getPrivateFieldMethodName = $"Get{SanitizedName}{memberName}";
 
                         type = Types.GetOrAdd(memberType);
                         typeName = type.FullName;
-                        
+
                         Members.TryAdd(
                             new(SymbolEqualityComparer.Default.GetHashCode(member),
                                 memberName,
                                 type,
-                                this, 
-                                isNullable = field.IsNullable(),
+                                this,
+                                isNullable = field.IsNullable,
                                 manualMatches,
                                 ignoreFor,
                                 true,
-                                !useUnsafeAccessor, 
+                                !useUnsafeAccessor,
                                 useUnsafeAccessor,
                                 maxDepth,
                                 getPrivateFieldMethodName));
-                
+
                         if (useUnsafeAccessor)
                         {
                             addFieldUnsafeAccessor();
 
-                            if (memberType.IsValueType && memberType.IsNullable())
+                            if (memberType.IsValueType && memberType.IsNullable)
                             {
                                 addNullUnsafeAccessor(type);
                             }
@@ -340,8 +340,8 @@ internal sealed class TypeMeta
                         code.Append(" ")
                             .Append(getPrivateFieldMethodName)
                             .Append("(");
-                        
-                        if(IsValueType) code.Append("ref ");
+
+                        if (IsValueType) code.Append("ref ");
 
                         code.Append(FullName)
                             .AppendLine(" _);");
@@ -352,7 +352,7 @@ internal sealed class TypeMeta
                 {
                     var targetOwnerXmlDocType = $"Nullable{{{type.FullName.Replace("<", "{").Replace(">", "}")}}}";
 
-                    _unsafeAccesors.Add(new("UnNull-"+type.FullName, code => code
+                    _unsafeAccesors.Add(new("UnNull-" + type.FullName, code => code
                         .Append(@"
     /// <summary>
     /// Gets a reference to the backing field of <see cref=""")
@@ -386,7 +386,7 @@ internal sealed class TypeMeta
         if (attributes.IsDefaultOrEmpty)
         {
             ignoreFor = null!;
-            manualMatch = null!;  
+            manualMatch = null!;
             return false;
         }
 
@@ -396,32 +396,32 @@ internal sealed class TypeMeta
         foreach (var attr in attributes)
         {
             if (attr.AttributeClass?.ToGlobalNamespaced() is not { } className) continue;
-                        
+
             switch (className)
             {
                 case "global::SourceCrafter.Mappify.Attributes.IgnoreAttribute":
-                        
+
                     return true;
-                        
+
                 case "global::SourceCrafter.Mappify.Attributes.IgnoreForAttribute":
-                        
+
                     if (IsNameOfMember(attr, out var ignoredId)) ignoreFor.Add(ignoredId);
-                        
+
                     continue;
-                        
+
                 case "global::SourceCrafter.Mappify.Attributes.MaxAttribute":
-                        
+
                     maxDepth = (short)attr.ConstructorArguments[0].Value!;
-                        
+
                     continue;
             }
-                        
+
             if (className != "global::SourceCrafter.Mappify.Attributes.MapAttribute")
                 continue;
-                        
+
             if (IsNameOfMember(attr, out var targetId)) manualMatch.Add(targetId);
         }
-        
+
         return false;
     }
 
@@ -429,7 +429,8 @@ internal sealed class TypeMeta
     {
         if ((attr.ApplicationSyntaxReference?.GetSyntax() as AttributeSyntax)?.ArgumentList?.Arguments[0]
             .Expression is not
-            InvocationExpressionSyntax {
+            InvocationExpressionSyntax
+            {
                 Expression: IdentifierNameSyntax { Identifier.Text: "nameof" },
                 ArgumentList.Arguments: [{ Expression: MemberAccessExpressionSyntax { Name: { } ignoreId } }]
             })
@@ -449,12 +450,12 @@ internal sealed class TypeMeta
     internal void AsCast(StringBuilder code, bool addNullable, string item)
     {
         code.Append('(').Append(FullName);
-        if(addNullable) code.Append('?');
+        if (addNullable) code.Append('?');
         code.Append(")").Append(item);
     }
     private void GetTupleMembers(out bool isMemberless)
-    {   
-        var members = ((INamedTypeSymbol)Symbol.AsNonNullable()).TupleElements;
+    {
+        var members = ((INamedTypeSymbol)Symbol.ToNonNullable).TupleElements;
 
         if (isMemberless = members.IsDefaultOrEmpty) return;
 
@@ -465,14 +466,14 @@ internal sealed class TypeMeta
                     member.ToNameOnly(),
                     Types.GetOrAdd(member.Type),
                     this,
-                    member.IsNullable(),
-                    [], 
+                    member.IsNullable,
+                    [],
                     []));
     }
 
     private bool IsEnumerableType(string nonGenericFullName, ITypeSymbol type, out CollectionMeta info)
     {
-        if (type.IsPrimitive())
+        if (type.IsPrimitive)
         {
             info = default!;
             return false;
@@ -552,6 +553,187 @@ internal sealed class TypeMeta
 
         return false;
     }
+    internal void BuildEnumMethods(Action<string, string> addSource, ref int i)
+    {
+        if (Symbol.GetMembers() is { Length: 0 } members) return;
+
+        string?
+            collectionsComma = null,
+            caseComma = null,
+            values = null,
+            descriptions = null,
+            names = null,
+            name = null,
+            description = null,
+            definedByName = null,
+            definedByInt = "",
+            tryGetValue = null,
+            tryGetName = null,
+            tryGetDesc = null;
+
+        foreach (var m in members.OfType<IFieldSymbol>())
+        {
+            string fullMemberName = MemberFullName(m);
+
+            values += collectionsComma + fullMemberName;
+
+            string descriptionStr = GetEnumDescription(m);
+
+            descriptions += collectionsComma + descriptionStr;
+
+            names += collectionsComma + "nameof(" + fullMemberName + ")";
+
+            name += caseComma + "            case " + fullMemberName + ": return nameof(" + fullMemberName + ");";
+
+            description += caseComma + "            case " + fullMemberName + @": 
+                        return " + descriptionStr + ";";
+
+            string distinctIntCase = "        case " + Convert.ToString(m.ConstantValue!);
+
+            if (!definedByInt.Contains(distinctIntCase)) definedByInt += caseComma + distinctIntCase + ":";
+
+            definedByName += caseComma + "        case nameof(" + fullMemberName + "):";
+
+            tryGetValue += caseComma + "        case nameof(" + fullMemberName + @"): 
+                    result = " + fullMemberName + @"; 
+                    return true;";
+
+            tryGetName += caseComma + "        case " + fullMemberName + @": 
+                    result = nameof(" + fullMemberName + @"); 
+                    return true;";
+
+            tryGetDesc += caseComma + "        case " + fullMemberName + @": 
+                    result = " + descriptionStr + @"; 
+                    return true;";
+
+            collectionsComma ??= "," + (caseComma ??= @"
+        ");
+        }
+
+        var code = new StringBuilder().AppendFormat(@"#nullable enable
+namespace SourceCrafter.Mappify;
+
+public static class Mappings{0}
+{{
+    
+    private static {1}[] {2}Values => field ??= [
+        {3}
+    ];
+
+    private static string[] {2}Descriptions => field ??= [
+        {4}
+    ];
+
+    private static string[] {2}Names => field ??= [
+        {5}
+    ];
+
+    extension({1} target)
+    {{
+        public string? Name
+	    {{
+            get
+            {{
+		        switch(target)
+                {{
+        {6}
+                    default: return null; 
+                }}
+            }}
+        }}
+
+        public string? Description
+        {{
+            get
+            {{
+		        switch(target)
+                {{
+        {7}
+                    default: return null; 
+                }}
+            }}
+        }}
+
+        public static global::System.ReadOnlySpan<string> Names => {2}Names;
+
+        public static global::System.ReadOnlySpan<{1}> Values => {2}Values;
+
+        public static global::System.ReadOnlySpan<string> Descriptions => {2}Descriptions;
+
+        public static bool IsDefined(string value)
+        {{
+		    switch(value)
+            {{
+        {8}
+                    return true; 
+                default: 
+                    return false; 
+            }}
+        }}
+
+        public static bool IsDefined(int value)
+        {{
+            switch(value)
+            {{
+        {9}
+                    return true;
+                default: 
+                    return false; 
+            }}
+        }}
+
+        public static bool TryGetValue(string value, out {1} result)
+        {{
+            switch(value)
+            {{
+        {10}
+                default: result = default; return false; 
+            }}
+        }}
+
+        public bool TryGetName(out string result)
+        {{
+            switch(target)
+            {{
+        {11}
+                default: result = default!; return false; 
+            }}
+        }}
+
+        public bool TryGetDescription(out string result)
+        {{
+            switch(target)
+            {{
+        {12}
+                default: result = default!; return false; 
+            }}
+        }}
+    }}
+}}",
+                /* 0 */  ++i,
+                /* 1 */  ExportFullName,
+                /* 2 */  SanitizedName,
+                /* 3 */  values,
+                /* 4 */  descriptions,
+                /* 5 */  names,
+                /* 6 */  name,
+                /* 7 */  description,
+                /* 8 */  definedByName,
+                /* 9 */  definedByInt,
+                /* 10 */ tryGetValue,
+                /* 11 */ tryGetName,
+                /* 12 */ tryGetDesc);
+
+        addSource($"{i++.ToString().PadLeft(3, '0')}_{SanitizedName}.enum.g.cs", code.ToString());
+
+        string MemberFullName(IFieldSymbol m) => ExportFullName + "." + m.Name;
+
+        static string GetEnumDescription(IFieldSymbol m) => $@"""{m
+            .GetAttributes()
+            .FirstOrDefault(a => a.AttributeClass?.ToGlobalNamespaced() is "global::System.ComponentModel.DescriptionAttribute")
+            ?.ConstructorArguments.FirstOrDefault().Value?.ToString() ?? m.Name.Wordify()}""";
+    }
+
 
     private static ITypeSymbol GetEnumerableType(ITypeSymbol enumerableType, bool isDictionary = false)
     {
@@ -569,7 +751,7 @@ internal sealed class TypeMeta
 
     private CollectionMeta GetCollectionInfo(EnumerableType enumerableType, ITypeSymbol typeSymbol)
     {
-        var itemDataType = Types.GetOrAdd((typeSymbol = typeSymbol.AsNonNullable()), enumerableType == EnumerableType.Dictionary);
+        var itemDataType = Types.GetOrAdd((typeSymbol = typeSymbol.ToNonNullable), enumerableType == EnumerableType.Dictionary);
 
         return enumerableType switch
         {
@@ -577,7 +759,7 @@ internal sealed class TypeMeta
             EnumerableType.Dictionary =>
                 new(itemDataType,
                     enumerableType,
-                    typeSymbol.IsNullable(),
+                    typeSymbol.IsNullable,
                     true,
                     true,
                     false,
@@ -586,7 +768,7 @@ internal sealed class TypeMeta
             EnumerableType.Queue =>
                 new(itemDataType,
                     enumerableType,
-                    typeSymbol.IsNullable(),
+                    typeSymbol.IsNullable,
                     false,
                     true,
                     false,
@@ -595,7 +777,7 @@ internal sealed class TypeMeta
             EnumerableType.Stack =>
                 new(itemDataType,
                     enumerableType,
-                    typeSymbol.IsNullable(),
+                    typeSymbol.IsNullable,
                     false,
                     true,
                     false,
@@ -604,7 +786,7 @@ internal sealed class TypeMeta
             EnumerableType.Enumerable =>
                 new(itemDataType,
                     enumerableType,
-                    typeSymbol.IsNullable(),
+                    typeSymbol.IsNullable,
                     false,
                     false,
                     true,
@@ -613,7 +795,7 @@ internal sealed class TypeMeta
             EnumerableType.ReadOnlyCollection =>
                 new(itemDataType,
                     enumerableType,
-                    typeSymbol.IsNullable(),
+                    typeSymbol.IsNullable,
                     true,
                     true,
                     false,
@@ -622,7 +804,7 @@ internal sealed class TypeMeta
             EnumerableType.ReadOnlySpan =>
                 new(itemDataType,
                     enumerableType,
-                    typeSymbol.IsNullable(),
+                    typeSymbol.IsNullable,
                     true,
                     true,
                     true,
@@ -631,7 +813,7 @@ internal sealed class TypeMeta
             EnumerableType.Collection =>
                 new(itemDataType,
                     enumerableType,
-                    typeSymbol.IsNullable(),
+                    typeSymbol.IsNullable,
                     true,
                     true,
                     false,
@@ -640,7 +822,7 @@ internal sealed class TypeMeta
             EnumerableType.Span =>
                 new(itemDataType,
                     enumerableType,
-                    typeSymbol.IsNullable(),
+                    typeSymbol.IsNullable,
                     true,
                     true,
                     true,
@@ -649,7 +831,7 @@ internal sealed class TypeMeta
             _ =>
                 new(itemDataType,
                     enumerableType,
-                    typeSymbol.IsNullable(),
+                    typeSymbol.IsNullable,
                     true,
                     true,
                     true,
@@ -697,9 +879,9 @@ internal class CodeRenderer(string key, Action<StringBuilder> renderer)
 
         renderer(code);
     }
-    
+
     public bool Equals(CodeRenderer y) => key == y.key;
-    
+
     public override int GetHashCode() => key.GetHashCode();
 }
 

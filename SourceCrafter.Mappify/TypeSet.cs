@@ -1,11 +1,9 @@
 ﻿using Microsoft.CodeAnalysis;
 
-using SourceCrafter.Mappify.Helpers;
 
 using System;
 using System.Collections.Generic;
 using System.Text;
-using SourceCrafter.Helpers;
 
 namespace SourceCrafter.Mappify
 {
@@ -15,11 +13,11 @@ namespace SourceCrafter.Mappify
         internal readonly HashSet<CodeRenderer> UnsafeAccessors = new(CodeEqualityComparer.Default);
         private readonly HashSet<string> _sanitizedNames = new(StringComparer.Ordinal);
 
-        internal ref TypeMeta GetOrAdd(ITypeSymbol membersSource, bool isDictionaryOwned = false)
+        internal  TypeMeta GetOrAdd(ITypeSymbol membersSource, bool isDictionaryOwned = false)
         {
             ITypeSymbol? typeSymbol = null;
             
-            if((membersSource = membersSource.AsNonNullable()) is INamedTypeSymbol { 
+            if((membersSource = membersSource.ToNonNullable) is INamedTypeSymbol { 
                    IsGenericType: true,
                    Name: "IImplement", 
                    ContainingNamespace.ContainingNamespace.Name: "SourceCrafter", 
@@ -33,13 +31,11 @@ namespace SourceCrafter.Mappify
             
             var id = SymbolEqualityComparer.Default.GetHashCode(membersSource);
 
-            ref var mapper = ref GetOrAddDefault(id, out var exists);
+            ref var type = ref GetOrAddDefault(id, out var exists);
 
-            if (!exists)
-                // ReSharper disable once ObjectCreationAsStatement
-                new TypeMeta(this, ref mapper, id, membersSource, typeSymbol, isDictionaryOwned);
-
-            return ref mapper!;
+            return exists
+                ? type!
+                : new TypeMeta(ref type, this, id, membersSource, typeSymbol, isDictionaryOwned);
         }
 
         internal string SanitizeName(ITypeSymbol type)

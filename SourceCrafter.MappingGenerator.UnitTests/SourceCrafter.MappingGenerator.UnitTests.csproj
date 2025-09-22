@@ -7,11 +7,6 @@
 		<LangVersion>latest</LangVersion>
 		<Configurations>Debug;Release;Test;Pack;DebugSGen</Configurations>
 	</PropertyGroup>
-
-	<ItemGroup>
-	  <Compile Remove="EnumsTest.cs" />
-	  <Compile Remove="Test.cs" />
-	</ItemGroup>
 	
 	<ItemGroup>
 		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />

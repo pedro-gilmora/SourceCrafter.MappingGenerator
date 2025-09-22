@@ -3,13 +3,12 @@ using System.Runtime.CompilerServices;
 using System;
 using System.Collections.Generic;
 using System.Collections;
-using SourceCrafter.Helpers;
 
 
 // ReSharper disable once CheckNamespace
-namespace SourceCrafter.Mappify.Helpers;
+namespace SourceCrafter;
 
-public abstract class Set<TValue> : IEnumerable<TValue>
+internal abstract class Set<TValue> : IEnumerable<TValue>
 {
 
     public static Set<TValue> Create<TKey>(Func<TValue, TKey> keySelector) => new Set<TKey, TValue>(keySelector);
@@ -43,7 +42,7 @@ public abstract class Set<TValue> : IEnumerable<TValue>
     }
 }
 
-public class Set<TKey, TValue> : Set<TValue>
+internal class Set<TKey, TValue> : Set<TValue>
 {
     private readonly Func<TKey, int> _getHashCode;
     private readonly Func<int, TKey, bool> _equals;
@@ -98,7 +97,7 @@ public class Set<TKey, TValue> : Set<TValue>
         if (min < 0)
             throw new ArgumentException("Hashtable capacity overflowed and went negative. Check load factor, capacity and the current size of the table");
 
-        foreach (var prime in Extensions.Primes)
+        foreach (var prime in SourceCrafter.Helpers.Primes)
         {
             if (prime >= min)
                 return prime;

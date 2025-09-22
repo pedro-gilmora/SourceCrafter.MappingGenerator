@@ -26,46 +26,51 @@ public class GeneratedMappers : IIncrementalGenerator
         {
             context.RegisterSourceOutput(
                 context.CompilationProvider.Combine(
+
                     FindMapperAttributes(context,
                         "SourceCrafter.Mappify.Attributes.ExtendAttribute`1",
                         static n => true,
-                        static (_, _, attr) => attr.AttributeClass?.TypeArguments.FirstOrDefault()!)
-                    .Combine(
-                        FindMapperAttributes(context,
+                        static (_, _, attr) => attr.AttributeClass?.TypeArguments.FirstOrDefault()!
+                    ).Combine(
+
+                    FindMapperAttributes(context,
                         "SourceCrafter.Mappify.Attributes.ExtendAttribute",
-                            static n => n is EnumDeclarationSyntax,
-                            static (targetSymbol, _, _) => (ITypeSymbol)targetSymbol)
-                        .Combine(
-                            FindMapperAttributes(context,
-                                "SourceCrafter.Mappify.Attributes.MapAttribute`1",
-                                static n => n is ClassDeclarationSyntax,
-                                static (targetSymbol, model, attr) =>
-                                    attr is {
-                                    AttributeClass.TypeArguments: [{ } target], 
-                                        ConstructorArguments: [{ Value: int mapKind }, { Value: int ignore }, ..]
-                                }
-                                    ? new Mapping(
-                                        (ITypeSymbol)targetSymbol,
-                                        target,
-                                        (MappingKind)mapKind,
-                                        (GenerateOn)ignore)
-                                    : default)
-                            .Combine(
-                                FindMapperAttributes(
-                                    context,
-                                    "SourceCrafter.Mappify.Attributes.MapAttribute`2",
-                                    static n => n is CompilationUnitSyntax,
-                                    static (_, model, attr) =>
-                                        attr is { 
-                                            AttributeClass.TypeArguments: [{ } target, { } source], 
-                                            ConstructorArguments: [{ Value: int mapKind }, { Value: int ignore }, ..] 
-                                        }
-                                            ? new Mapping(
-                                                target,
-                                                source,
-                                                (MappingKind)mapKind,
-                                                (GenerateOn)ignore)
-                                            : default))))), (ctx, info)
+                        static n => n is EnumDeclarationSyntax,
+                        static (targetSymbol, _, _) => (ITypeSymbol)targetSymbol
+                    ).Combine(
+                            
+                    FindMapperAttributes(context,
+                        "SourceCrafter.Mappify.Attributes.MapAttribute`1",
+                        static n => n is ClassDeclarationSyntax,
+                        static (targetSymbol, model, attr) =>
+                            attr is {
+                            AttributeClass.TypeArguments: [{ } target], 
+                                ConstructorArguments: [{ Value: int mapKind }, { Value: int ignore }, ..]
+                        }
+                            ? new Mapping(
+                                (ITypeSymbol)targetSymbol,
+                                target,
+                                (MappingKind)mapKind,
+                                (GenerateOn)ignore)
+                            : default
+                    ).Combine(
+                    
+                    FindMapperAttributes(
+                        context,
+                        "SourceCrafter.Mappify.Attributes.MapAttribute`2",
+                        static n => n is CompilationUnitSyntax,
+                        static (_, model, attr) =>
+                            attr is { 
+                                AttributeClass.TypeArguments: [{ } target, { } source], 
+                                ConstructorArguments: [{ Value: int mapKind }, { Value: int ignore }, ..] 
+                            }
+                                ? new Mapping(
+                                    target,
+                                    source,
+                                    (MappingKind)mapKind,
+                                    (GenerateOn)ignore)
+                                : default
+                    ))))), (ctx, info)
                 =>
             {
                 var (compilation, (enumGlobal, (enumOnClass, (globalConfig, onClass)))) = info;
@@ -79,7 +84,18 @@ public class GeneratedMappers : IIncrementalGenerator
 
                     foreach (var (a, b, mapKind, ignore) in globalConfig.Concat(onClass))
                     {
-                        mappers.GetOrAdd(mappers.Types.GetOrAdd(a), mappers.Types.GetOrAdd(b), ignore, ref i);
+                        var targetType = mappers.Types.GetOrAdd(a);
+
+                        mappers.GetOrAdd(targetType, targetType, GenerateOn.None, ref i);
+
+                        if (SymbolEqualityComparer.Default.Equals(a, b)) continue;
+
+                        var sourceType = mappers.Types.GetOrAdd(b);
+
+                        mappers.GetOrAdd(sourceType, sourceType, GenerateOn.None, ref i);
+
+                        mappers.GetOrAdd(targetType, sourceType, ignore, ref i);
+
                         i++;
                     }
 
@@ -87,7 +103,7 @@ public class GeneratedMappers : IIncrementalGenerator
 
                     foreach (var item in enumGlobal.Concat(enumOnClass))
                     {
-                        mappers.Types.GetOrAdd(item).BuildEnumExtensions();
+                        mappers.Types.GetOrAdd(item).BuildEnumMethods(ctx.AddSource, ref i);
                     }
                 }
                 catch (Exception e)

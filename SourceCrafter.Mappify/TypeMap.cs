@@ -1,5 +1,3 @@
-using SourceCrafter.Mappify.Helpers;
-
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -22,7 +20,7 @@ internal sealed class TypeMap(
     
     private readonly bool targetHasMember = !targetType.IsMemberless, sourceHasMembers = !sourceType.IsMemberless;
     
-    internal bool IsValid = true, IsExtraCode = false;
+    internal bool IsValid = true;
 
     internal readonly string MethodName = methodName, ReverseMethodName = reverseMethodName;
   

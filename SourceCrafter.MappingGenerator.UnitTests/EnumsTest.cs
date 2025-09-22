@@ -1,6 +1,4 @@
-﻿using SourceCrafter.Bindings.Attributes;
-
-//Testing utils
+﻿//Testing utils
 using Xunit;
 
 // Analyzer 
@@ -8,9 +6,10 @@ using Xunit;
 //Testing purpose
 using FluentAssertions;
 using System.ComponentModel;
-using static SourceCrafter.EnumExtensions.EnumExtensions;
 using FluentAssertions.Common;
-using SourceCrafter.Bindings.Constants;
+using SourceCrafter.Mappify.Attributes;
+using SourceCrafter.Mappify;
+using SourceCrafter.UnitTests;
 
 [assembly: Extend<MappingKind>]
 
@@ -26,33 +25,68 @@ public class EnumsTest
         Failure = "Transaction had an external failure";
 
     [Fact]
-    public void TestEnums()
+    public void TestEnums_0()
     {
-        StatusEnum.GetValues().Should().BeEquivalentTo([Status.NotStarted, Status.Stopped, Status.Started, Status.Cancelled, Status.Failed]);
+        MappingKind.Values.ToArray().Should().BeEquivalentTo([MappingKind.All, MappingKind.Normal, MappingKind.Fill]);
 
-        StatusEnum.GetDescriptions().Should().BeEquivalentTo([NotStartedDesc, StoppedDesc, StartedDesc, CancelledDesc, Failure]);
+        MappingKind.Names.ToArray().Should().BeEquivalentTo([nameof(MappingKind.All), nameof(MappingKind.Normal), nameof(MappingKind.Fill)]);
 
-        StatusEnum.GetNames().Should().BeEquivalentTo(["NotStarted", "Stopped", "Started", "Cancelled", "Failed"]);
+        MappingKind.Fill.Name.Should().Be(nameof(MappingKind.Fill));
 
-        Status.Started.GetName().Should().Be("Started");
+        MappingKind.TryGetValue(nameof(MappingKind.Fill), out var kind).Should().BeTrue();
 
-        "Cancelled".TryGetValue(out Status status).Should().BeTrue();
+        MappingKind.Fill.Should().Be(kind);
+
+        MappingKind.TryGetValue("Unknown", out _).Should().BeFalse();
+
+        MappingKind.IsDefined(1).Should().BeTrue();
+
+        MappingKind.IsDefined(nameof(MappingKind.Fill)).Should().BeTrue();
+
+        MappingKind.IsDefined(5).Should().BeFalse();
+
+        MappingKind.IsDefined("Uknown").Should().BeFalse();
+
+        MappingKind.Fill.TryGetName(out var name).Should().BeTrue();
+
+        name.Should().Be(nameof(MappingKind.Fill));
+
+        ((MappingKind)6).TryGetName(out _).Should().BeFalse();
+
+        MappingKind.Fill.TryGetDescription(out var desc).Should().BeTrue();
+
+        desc.Should().Be(nameof(MappingKind.Fill));
+
+        ((MappingKind)6).TryGetDescription(out _).Should().BeFalse();
+    }
+    [Fact]
+    public void TestEnums_1()
+    {
+        Status.Values.ToArray().Should().BeEquivalentTo([Status.NotStarted, Status.Stopped, Status.Started, Status.Cancelled, Status.Failed]);
+
+        Status.Descriptions.ToArray().Should().BeEquivalentTo([NotStartedDesc, StoppedDesc, StartedDesc, CancelledDesc, Failure]);
+
+        Status.Names.ToArray().Should().BeEquivalentTo([nameof(Status.NotStarted), nameof(Status.Stopped), nameof(Status.Started), nameof(Status.Cancelled), nameof(Status.Failed)]);
+
+        Status.Started.Name.Should().Be(nameof(Status.Started));
+
+        Status.TryGetValue(nameof(Status.Cancelled), out var status).Should().BeTrue();
 
         Status.Cancelled.Should().Be(status);
 
-        "Unknown".TryGetValue(out Status _).Should().BeFalse();
+        Status.TryGetValue("Unknown", out _).Should().BeFalse();
 
-        StatusEnum.IsDefined(1).Should().BeTrue();
+        Status.IsDefined(1).Should().BeTrue();
 
-        StatusEnum.IsDefined("Failed").Should().BeTrue();
+        Status.IsDefined(nameof(Status.Failed)).Should().BeTrue();
 
-        StatusEnum.IsDefined(5).Should().BeFalse();
+        Status.IsDefined(5).Should().BeFalse();
 
-        StatusEnum.IsDefined("Uknown").Should().BeFalse();
+        Status.IsDefined("Uknown").Should().BeFalse();
 
         Status.Started.TryGetName(out var name).Should().BeTrue();
 
-        name.Should().Be("Started");
+        name.Should().Be(nameof(Status.Started));
 
         ((Status)6).TryGetName(out _).Should().BeFalse();
 
@@ -61,40 +95,5 @@ public class EnumsTest
         desc.Should().Be(CancelledDesc);
 
         ((Status)6).TryGetDescription(out _).Should().BeFalse();
-    }
-    [Fact]
-    public void TestAssemblyEnums()
-    {
-        MappingKindEnum.GetDescriptions().Should().BeEquivalentTo(["All", "Normal", "Fill"]);
-
-        MappingKindEnum.GetNames().Should().BeEquivalentTo(["All", "Normal", "Fill"]);
-
-        MappingKind.Fill.GetName().Should().Be("Fill");
-
-        "Fill".TryGetValue(out MappingKind kind).Should().BeTrue();
-
-        MappingKind.Fill.Should().Be(kind);
-
-        "Unknown".TryGetValue(out MappingKind _).Should().BeFalse();
-
-        MappingKindEnum.IsDefined(1).Should().BeTrue();
-
-        MappingKindEnum.IsDefined("Fill").Should().BeTrue();
-
-        MappingKindEnum.IsDefined(5).Should().BeFalse();
-
-        MappingKindEnum.IsDefined("Uknown").Should().BeFalse();
-
-        MappingKind.Fill.TryGetName(out var name).Should().BeTrue();
-
-        name.Should().Be("Fill");
-
-        ((MappingKind)6).TryGetName(out _).Should().BeFalse();
-
-        MappingKind.Fill.TryGetDescription(out var desc).Should().BeTrue();
-
-        desc.Should().Be("Fill");
-
-        ((MappingKind)6).TryGetDescription(out _).Should().BeFalse();
     }
 }
