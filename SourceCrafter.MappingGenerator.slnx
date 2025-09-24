@@ -1,0 +1,19 @@
+<Solution>
+  <Configurations>
+    <BuildType Name="Debug" />
+    <BuildType Name="DebugSGen" />
+    <BuildType Name="Pack" />
+    <BuildType Name="Release" />
+  </Configurations>
+  <Folder Name="/Elementos de la solución/">
+    <File Path=".github/workflows/dotnet.yml" />
+    <File Path="ReadMe.md" />
+  </Folder>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+  </Folder>
+  <Project Path="SourceCrafter.Mappify/SourceCrafter.Mappify.csproj">
+    <BuildType Solution="Pack|*" Project="Debug" />
+  </Project>
+  <Project Path="SourceCrafter.MappingGenerator.UnitTests/SourceCrafter.MappingGenerator.UnitTests.csproj" />
+</Solution>
