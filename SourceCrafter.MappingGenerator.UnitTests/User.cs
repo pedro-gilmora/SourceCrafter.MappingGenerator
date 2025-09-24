@@ -33,6 +33,7 @@ public partial class User : IUserPerson2, IContactableUser //: IUser
     [Max(2)]
     //public IEnumerable<User> Asignees { get; set; } = [];
     public Role MainRole { get; set; }
+    [IgnoreFor(nameof(UserDto.Supervisor))]
     public User? Supervisor { get; init; }
     public (string, object)[] ExtendedProperties { get; init; } = [];
     public string[] Phrases { get; set; } = [];

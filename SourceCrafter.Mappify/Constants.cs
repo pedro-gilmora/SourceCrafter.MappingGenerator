@@ -2,7 +2,7 @@
 
 namespace SourceCrafter.Mappify;
 
-public enum GenerateOn { None, Source, Target, Both }
+public enum ApplyTo { None, Source, Target, Both }
 
 internal enum EnumerableType { Queue, Stack, Enumerable, ReadOnlyCollection, ReadOnlySpan, Collection, Array, Span, Dictionary }
 

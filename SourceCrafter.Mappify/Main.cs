@@ -1,6 +1,6 @@
 ﻿global using Mapping =
     (Microsoft.CodeAnalysis.ITypeSymbol a, Microsoft.CodeAnalysis.ITypeSymbol b, SourceCrafter.Mappify.MappingKind
-    mapKind, SourceCrafter.Mappify.GenerateOn ignore);
+    mapKind, SourceCrafter.Mappify.ApplyTo ignore);
 global using ScalarConversion = (bool exists, bool isExplicit, bool targetInherits);
 using System;
 using System.Collections.Immutable;
@@ -51,7 +51,7 @@ public class GeneratedMappers : IIncrementalGenerator
                                 (ITypeSymbol)targetSymbol,
                                 target,
                                 (MappingKind)mapKind,
-                                (GenerateOn)ignore)
+                                (ApplyTo)ignore)
                             : default
                     ).Combine(
                     
@@ -68,7 +68,7 @@ public class GeneratedMappers : IIncrementalGenerator
                                     target,
                                     source,
                                     (MappingKind)mapKind,
-                                    (GenerateOn)ignore)
+                                    (ApplyTo)ignore)
                                 : default
                     ))))), (ctx, info)
                 =>
@@ -86,13 +86,13 @@ public class GeneratedMappers : IIncrementalGenerator
                     {
                         var targetType = mappers.Types.GetOrAdd(a);
 
-                        mappers.GetOrAdd(targetType, targetType, GenerateOn.None, ref i);
+                        mappers.GetOrAdd(targetType, targetType, ApplyTo.None, ref i);
 
                         if (SymbolEqualityComparer.Default.Equals(a, b)) continue;
 
                         var sourceType = mappers.Types.GetOrAdd(b);
 
-                        mappers.GetOrAdd(sourceType, sourceType, GenerateOn.None, ref i);
+                        mappers.GetOrAdd(sourceType, sourceType, ApplyTo.None, ref i);
 
                         mappers.GetOrAdd(targetType, sourceType, ignore, ref i);
 

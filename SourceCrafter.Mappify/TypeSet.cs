@@ -95,7 +95,7 @@ namespace SourceCrafter.Mappify
                         }
                         else
                         {
-                            id.Append(inType.ToTypeNameFormat());
+                            id.Append(inType.TypeNameFormat);
                         }
                         
                         if(start == id.Length || char.IsUpper(id[start] )) return;

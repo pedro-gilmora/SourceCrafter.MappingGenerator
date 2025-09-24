@@ -21,7 +21,7 @@ internal sealed partial class Mappers(Compilation compilation, Action<string, st
     internal TypeMap GetOrAdd(
         TypeMeta targetType,
         TypeMeta sourceType,
-        GenerateOn ignore,
+        ApplyTo ignore,
         ref int index, 
         bool dictionaryContext = false)
     {

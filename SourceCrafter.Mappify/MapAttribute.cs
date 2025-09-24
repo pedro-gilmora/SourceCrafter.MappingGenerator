@@ -6,22 +6,22 @@ namespace SourceCrafter.Mappify.Attributes
 {
 #pragma warning disable CS9113 // Parameter is unread.
     [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
-    public sealed class MapAttribute<TIn, TOut>(MappingKind kind = MappingKind.All, GenerateOn ignore = GenerateOn.None, string[] ignoreMembers = default!) : Attribute;
+    public sealed class MapAttribute<TIn, TOut>(MappingKind kind = MappingKind.All, ApplyTo ignore = ApplyTo.None, string[] ignoreMembers = default!) : Attribute;
     
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct, AllowMultiple = true)]
-    public sealed class MapAttribute<TIn>(MappingKind kind = MappingKind.All, GenerateOn ignore = GenerateOn.None, string[] ignoreMembers = default!) : Attribute;
+    public sealed class MapAttribute<TIn>(MappingKind kind = MappingKind.All, ApplyTo ignore = ApplyTo.None, string[] ignoreMembers = default!) : Attribute;
     
     [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property, AllowMultiple = true)]
-    public sealed class MapAttribute(string memberNameof, GenerateOn ignore = GenerateOn.None) : Attribute;
+    public sealed class MapAttribute(string memberNameof, ApplyTo ignore = ApplyTo.None) : Attribute;
 
     [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property, AllowMultiple = true)]
-    public sealed class IgnoreForAttribute(GenerateOn ignore = GenerateOn.Both) : Attribute;
+    public sealed class IgnoreForAttribute(string value = "", ApplyTo ignore = ApplyTo.Both) : Attribute;
 
     [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property, AllowMultiple = true)]
-    public sealed class IgnoreAttribute(GenerateOn ignore = GenerateOn.Both) : Attribute;
+    public sealed class IgnoreAttribute(ApplyTo ignore = ApplyTo.Both) : Attribute;
 
     [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property, AllowMultiple = true)]
-    public sealed class MaxAttribute(short count = 1, GenerateOn ignore = GenerateOn.Both) : Attribute;
+    public sealed class MaxAttribute(short count = 1, ApplyTo ignore = ApplyTo.Both) : Attribute;
 
     [AttributeUsage(AttributeTargets.Enum, AllowMultiple = true)]
     public sealed class ExtendAttribute(string ignore = "") : Attribute;

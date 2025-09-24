@@ -54,26 +54,6 @@ namespace SourceCrafter
                 genericsOptions: SymbolDisplayGenericsOptions.IncludeTypeParameters | SymbolDisplayGenericsOptions.IncludeVariance,
                 miscellaneousOptions: SymbolDisplayMiscellaneousOptions.UseSpecialTypes | SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier);
 
-        internal static string ToGlobalNamespaced(this ISymbol t) => t.ToDisplayString(_globalizedNamespace);
-
-        internal static string ToGlobalNonGenericNamespace(this ISymbol t) => t.ToDisplayString(_globalizedNonGenericNamespace);
-
-        internal static string ToTypeNameFormat(this ITypeSymbol t) => t.ToDisplayString(_typeNameFormat);
-
-        internal static string ToNameOnly(this ISymbol t) => t.ToDisplayString(_symbolNameOnly);
-
-        static bool IsRelatedTo(this ITypeSymbol type, ITypeSymbol other)
-        {
-            return SymbolEqualityComparer.Default.Equals(type, other)
-                || type.HasBaseType(other)
-                || type.AllInterfaces.Any(type.HasBaseType);
-        }
-
-        static bool HasBaseType(this ITypeSymbol type, ITypeSymbol other)
-        {
-            return type is not null && type.BaseType is not null && (SymbolEqualityComparer.Default.Equals(type.BaseType, other) || HasBaseType(type.BaseType, other));
-        }
-
         static IEnumerable<(IParameterSymbol, AttributeArgumentSyntax?)> GetAttrParamsMap(
             ImmutableArray<IParameterSymbol> paramSymbols,
             SeparatedSyntaxList<AttributeArgumentSyntax> argsSyntax)
@@ -217,6 +197,8 @@ namespace SourceCrafter
         extension(ISymbol symbol)
         {
             internal string FullyQualifiedMetadata => symbol.ContainingNamespace.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + '.' + symbol.MetadataName;
+
+            internal string ToNameOnly() => symbol.ToDisplayString(_symbolNameOnly);
         }
 
         extension(ILocalSymbol symbol)
@@ -287,6 +269,24 @@ namespace SourceCrafter
             internal bool AllowsNull
                 => type is { IsValueType: false, IsTupleType: false, IsReferenceType: true };
 
+            internal string FullyQualifiedName => type.ToDisplayString(_globalizedNamespace);
+
+            internal string FullyQualifiedNonGeneric => type.ToDisplayString(_globalizedNonGenericNamespace);
+
+            internal string TypeNameFormat => type.ToDisplayString(_typeNameFormat);
+
+            internal bool IsRelatedTo(ITypeSymbol other)
+            {
+                return SymbolEqualityComparer.Default.Equals(type, other)
+                    || HasBaseType(type, other)
+                    || type.AllInterfaces.Any(type.HasBaseType);
+            }
+
+            internal bool HasBaseType(ITypeSymbol other)
+            {
+                return type?.BaseType is not null && (SymbolEqualityComparer.Default.Equals(type.BaseType, other) || HasBaseType(type.BaseType, other));
+            }
+
         }
 
         internal static ImmutableArray<IParameterSymbol> GetParameters(this ITypeSymbol implType)
@@ -350,7 +350,7 @@ namespace SourceCrafter
 
         internal static bool TryGetAsyncType(this ITypeSymbol typeSymbol, out ITypeSymbol factoryType)
         {
-            switch ((factoryType = typeSymbol)?.ToGlobalNonGenericNamespace())
+            switch ((factoryType = typeSymbol)?.FullyQualifiedNonGeneric)
             {
                 case "global::System.Threading.Tasks.ValueTask" or "global::System.Threading.Tasks.Task"
                     when factoryType is INamedTypeSymbol { TypeArguments: [{ } firstTypeArg] }:

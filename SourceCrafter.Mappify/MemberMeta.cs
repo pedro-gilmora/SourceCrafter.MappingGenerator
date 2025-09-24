@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.CompilerServices;
 
 namespace SourceCrafter.Mappify;
@@ -16,11 +17,12 @@ internal class MemberMeta(
     bool canWrite = true,
     bool useUnsafeAccessor = false,
     short maxDepth = 1,
-    string privateFieldMethodName = "")
+    string privateFieldMethodName = "") : IEquatable<MemberMeta>
 {
     private readonly int _id = id;
 
-    private readonly HashSet<int> _ignores = ignoreFor ?? [], _matches = manualMatches ?? [];
+    private readonly HashSet<int> _ignores = ignoreFor ?? [];
+    HashSet<int> _matches = manualMatches ?? [];
 
     internal readonly bool 
         CanRead = canRead, 
@@ -39,7 +41,7 @@ internal class MemberMeta(
     
     internal bool IsParentTypeRecursive => owningType?.IsRecursive is true;
 
-    internal bool Matches(in MemberMeta source, bool ignoreCase, bool canUseUnsafeAccessor, out bool isTargetAssignable, out bool isSourceAssignable)
+    internal bool Matches(MemberMeta source, bool ignoreCase, bool canUseUnsafeAccessor, out bool isTargetAssignable, out bool isSourceAssignable)
     {
         if (_id != source._id
             && !Name.Equals(source.Name, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)
@@ -51,37 +53,44 @@ internal class MemberMeta(
             return isTargetAssignable = isSourceAssignable = false;
         }
 
-        bool areMatechedByAttribute = source._matches.Contains(_id) || _matches.Contains(source._id),
+        bool matchedByAttribute = source._matches.Contains(_id) || _matches.Contains(source._id),
             targetIgnoresSource = _ignores.Contains(source._id),
             sourceIgnoresTarget = source._ignores.Contains(_id),
             targetCanBeAssigned = source.CanRead && (CanWrite || (UseUnsafeAccessor && canUseUnsafeAccessor)),
             sourceCanBeAssigned = CanRead && (source.CanWrite || (source.UseUnsafeAccessor && canUseUnsafeAccessor));        
 
-        return (isTargetAssignable = (areMatechedByAttribute || !targetIgnoresSource) && targetCanBeAssigned)
-            | (isSourceAssignable = (areMatechedByAttribute || !sourceIgnoresTarget) && sourceCanBeAssigned);
+        return (isTargetAssignable = (matchedByAttribute || !targetIgnoresSource) && targetCanBeAssigned)
+            | (isSourceAssignable = (matchedByAttribute || !sourceIgnoresTarget) && sourceCanBeAssigned);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool operator ==(in MemberMeta a, in MemberMeta b)
     {
-        return (a.Type.Id, a.Name) == (b.Type.Id, b.Name);
+        return a.Equals(b);
     }
 
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool operator !=(in MemberMeta a, in MemberMeta b)
     {
-        return (a.Type.Id, a.Name) != (b.Type.Id, b.Name);
+        return !a.Equals(b);
     }
 
     public override bool Equals(object? obj)
     {
-        return obj is MemberMeta t && t == this;
+        return (obj as MemberMeta)?.Equals(this) ?? false;
     }
+
 
     public override int GetHashCode()
     {
         return (Type.Id, Name).GetHashCode();
+    }
+
+    public bool Equals(MemberMeta b)
+    {
+        return Type.Symbol.IsRelatedTo(b.Type.Symbol)
+            && Name.Equals(b.Name, Type.IsTupleType || b.Type.Symbol.IsTupleType ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
     }
 }
 

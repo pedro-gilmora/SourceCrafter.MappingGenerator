@@ -73,10 +73,10 @@ internal sealed class TypeMeta
         DictionaryOwned = isDictionaryOwned;
         Name = Symbol.Name;
         ShortName = Symbol.ToNameOnly();
-        FullName = Symbol.ToGlobalNamespaced();
+        FullName = Symbol.FullyQualifiedName;
 
-        ExportNonFullGenericName = type.ToGlobalNonGenericNamespace();
-        FullNonGenericName = Symbol.ToGlobalNonGenericNamespace();
+        ExportNonFullGenericName = type.FullyQualifiedNonGeneric;
+        FullNonGenericName = Symbol.FullyQualifiedNonGeneric;
         IsKeyValueType = Name is "KeyValuePair";
         IsObject = SymbolEqualityComparer.Default.Equals(Symbol, types.Compilation.ObjectType);
         IsPrimitive = type.IsPrimitive;
@@ -88,7 +88,7 @@ internal sealed class TypeMeta
             || implementation?.Kind is SymbolKind.ErrorType;
 
         (SanitizedName, ExportFullName) = membersSource.ToNonNullable is { } memberSource
-            ? (types.SanitizeName(memberSource), ExportFullName = memberSource.ToNonNullable.ToGlobalNamespaced().TrimEnd('?'))
+            ? (types.SanitizeName(memberSource), ExportFullName = memberSource.ToNonNullable.FullyQualifiedName.TrimEnd('?'))
             : (types.SanitizeName(type), ExportFullName = FullName);
 
         IsCollection = IsEnumerableType(FullNonGenericName, type, out Collection);
@@ -395,7 +395,7 @@ internal sealed class TypeMeta
 
         foreach (var attr in attributes)
         {
-            if (attr.AttributeClass?.ToGlobalNamespaced() is not { } className) continue;
+            if (attr.AttributeClass?.FullyQualifiedName is not { } className) continue;
 
             switch (className)
             {
@@ -405,7 +405,8 @@ internal sealed class TypeMeta
 
                 case "global::SourceCrafter.Mappify.Attributes.IgnoreForAttribute":
 
-                    if (IsNameOfMember(attr, out var ignoredId)) ignoreFor.Add(ignoredId);
+                    if (TryGetSymbolIdFromNameOf(attr, 0, out var ignoredId))
+                        ignoreFor.Add(ignoredId);
 
                     continue;
 
@@ -414,26 +415,24 @@ internal sealed class TypeMeta
                     maxDepth = (short)attr.ConstructorArguments[0].Value!;
 
                     continue;
+                case "global::SourceCrafter.Mappify.Attributes.MapAttribute":
+
+                    if (TryGetSymbolIdFromNameOf(attr, 0, out var targetId)) manualMatch.Add(targetId);
+
+                    break;
+
             }
-
-            if (className != "global::SourceCrafter.Mappify.Attributes.MapAttribute")
-                continue;
-
-            if (IsNameOfMember(attr, out var targetId)) manualMatch.Add(targetId);
         }
 
         return false;
     }
 
-    private bool IsNameOfMember(AttributeData attr, out int memberId)
+    private bool TryGetSymbolIdFromNameOf(AttributeData attr, int index, out int memberId)
     {
-        if ((attr.ApplicationSyntaxReference?.GetSyntax() as AttributeSyntax)?.ArgumentList?.Arguments[0]
-            .Expression is not
-            InvocationExpressionSyntax
-            {
+        if ((attr.ApplicationSyntaxReference?.GetSyntax() as AttributeSyntax)?.ArgumentList?.Arguments.ElementAtOrDefault(index) is not { Expression : InvocationExpressionSyntax {
                 Expression: IdentifierNameSyntax { Identifier.Text: "nameof" },
                 ArgumentList.Arguments: [{ Expression: MemberAccessExpressionSyntax { Name: { } ignoreId } }]
-            })
+            } })
         {
             memberId = 0;
             return false;
@@ -544,7 +543,7 @@ internal sealed class TypeMeta
                 }
                 else
                     foreach (var item in type.AllInterfaces)
-                        if (IsEnumerableType(item.ToGlobalNonGenericNamespace(), item, out info))
+                        if (IsEnumerableType(item.FullyQualifiedNonGeneric, item, out info))
                             return true;
                 break;
         }
@@ -730,7 +729,7 @@ public static class Mappings{0}
 
         static string GetEnumDescription(IFieldSymbol m) => $@"""{m
             .GetAttributes()
-            .FirstOrDefault(a => a.AttributeClass?.ToGlobalNamespaced() is "global::System.ComponentModel.DescriptionAttribute")
+            .FirstOrDefault(a => a.AttributeClass?.FullyQualifiedName is "global::System.ComponentModel.DescriptionAttribute")
             ?.ConstructorArguments.FirstOrDefault().Value?.ToString() ?? m.Name.Wordify()}""";
     }
 
