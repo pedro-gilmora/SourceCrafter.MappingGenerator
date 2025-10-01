@@ -28,14 +28,17 @@ public partial class User : IUserPerson2, IContactableUser //: IUser
     [Ignore]
     public string? Unwanted { get; set; }
     public DateTime DateOfBirth { get; set; }
+
     [Map(nameof(UserDto.TotalAmount))]
     public double? Balance { get; set; }
+
     [Max(2)]
     //public IEnumerable<User> Asignees { get; set; } = [];
     public Role MainRole { get; set; }
-    [IgnoreFor(nameof(UserDto.Supervisor))]
+
+    //[IgnoreFor(nameof(UserDto.Supervisor))]
     public User? Supervisor { get; init; }
-    public (string, object)[] ExtendedProperties { get; init; } = [];
+    public Dictionary<object, string> ExtendedProperties { get; init; } = [];
     public string[] Phrases { get; set; } = [];
     public Status Status { get; }
     public IEmail? MainEmail { get; set; }

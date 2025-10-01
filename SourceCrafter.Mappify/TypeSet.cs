@@ -13,7 +13,7 @@ namespace SourceCrafter.Mappify
         internal readonly HashSet<CodeRenderer> UnsafeAccessors = new(CodeEqualityComparer.Default);
         private readonly HashSet<string> _sanitizedNames = new(StringComparer.Ordinal);
 
-        internal  TypeMeta GetOrAdd(ITypeSymbol membersSource, bool isDictionaryOwned = false)
+        internal TypeMeta GetOrAdd(ITypeSymbol membersSource)
         {
             ITypeSymbol? typeSymbol = null;
             
@@ -31,11 +31,11 @@ namespace SourceCrafter.Mappify
             
             var id = SymbolEqualityComparer.Default.GetHashCode(membersSource);
 
-            ref var type = ref GetOrAddDefault(id, out var exists);
+            ref var type = ref GetValueRefOrAddDefault(id, out var exists);
 
             return exists
                 ? type!
-                : new TypeMeta(ref type, this, id, membersSource, typeSymbol, isDictionaryOwned);
+                : new TypeMeta(ref type, this, id, membersSource, typeSymbol);
         }
 
         internal string SanitizeName(ITypeSymbol type)

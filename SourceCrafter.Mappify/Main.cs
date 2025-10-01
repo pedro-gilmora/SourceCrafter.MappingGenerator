@@ -2,6 +2,7 @@
     (Microsoft.CodeAnalysis.ITypeSymbol a, Microsoft.CodeAnalysis.ITypeSymbol b, SourceCrafter.Mappify.MappingKind
     mapKind, SourceCrafter.Mappify.ApplyTo ignore);
 global using ScalarConversion = (bool exists, bool isExplicit, bool targetInherits);
+
 using System;
 using System.Collections.Immutable;
 using System.Diagnostics;
@@ -38,15 +39,16 @@ public class GeneratedMappers : IIncrementalGenerator
                         static n => n is EnumDeclarationSyntax,
                         static (targetSymbol, _, _) => (ITypeSymbol)targetSymbol
                     ).Combine(
-                            
+
                     FindMapperAttributes(context,
                         "SourceCrafter.Mappify.Attributes.MapAttribute`1",
                         static n => n is ClassDeclarationSyntax,
                         static (targetSymbol, model, attr) =>
-                            attr is {
-                            AttributeClass.TypeArguments: [{ } target], 
+                            attr is
+                            {
+                                AttributeClass.TypeArguments: [{ } target],
                                 ConstructorArguments: [{ Value: int mapKind }, { Value: int ignore }, ..]
-                        }
+                            }
                             ? new Mapping(
                                 (ITypeSymbol)targetSymbol,
                                 target,
@@ -54,15 +56,16 @@ public class GeneratedMappers : IIncrementalGenerator
                                 (ApplyTo)ignore)
                             : default
                     ).Combine(
-                    
+
                     FindMapperAttributes(
                         context,
                         "SourceCrafter.Mappify.Attributes.MapAttribute`2",
                         static n => n is CompilationUnitSyntax,
                         static (_, model, attr) =>
-                            attr is { 
-                                AttributeClass.TypeArguments: [{ } target, { } source], 
-                                ConstructorArguments: [{ Value: int mapKind }, { Value: int ignore }, ..] 
+                            attr is
+                            {
+                                AttributeClass.TypeArguments: [{ } target, { } source],
+                                ConstructorArguments: [{ Value: int mapKind }, { Value: int ignore }, ..]
                             }
                                 ? new Mapping(
                                     target,
@@ -77,8 +80,11 @@ public class GeneratedMappers : IIncrementalGenerator
 
                 try
                 {
-                    Mappers mappers = new(compilation, ctx.AddSource);
-        
+                    Mappers mappers = new(
+                        compilation,
+                        compilation.GetTypeByMetadataName("System.Runtime.CompilerServices.UnsafeAccessorAttribute") is not null, 
+                        ctx.AddSource);
+
                     var i = 0;
 
 
@@ -86,15 +92,7 @@ public class GeneratedMappers : IIncrementalGenerator
                     {
                         var targetType = mappers.Types.GetOrAdd(a);
 
-                        mappers.GetOrAdd(targetType, targetType, ApplyTo.None, ref i);
-
-                        if (SymbolEqualityComparer.Default.Equals(a, b)) continue;
-
-                        var sourceType = mappers.Types.GetOrAdd(b);
-
-                        mappers.GetOrAdd(sourceType, sourceType, ApplyTo.None, ref i);
-
-                        mappers.GetOrAdd(targetType, sourceType, ignore, ref i);
+                        mappers.GetOrAdd(targetType, SymbolEqualityComparer.Default.Equals(a, b) ? targetType : mappers.Types.GetOrAdd(b), ApplyTo.None);
 
                         i++;
                     }
@@ -108,14 +106,14 @@ public class GeneratedMappers : IIncrementalGenerator
                 }
                 catch (Exception e)
                 {
-                    if(Debugger.IsLogging())
+                    if (Debugger.IsLogging())
                         Debugger.Log(0, "Source Generation", $"[SourceCrafter Exception]: \n{e}");
                 }
             });
         }
         catch (Exception e)
         {
-            if(Debugger.IsLogging())
+            if (Debugger.IsLogging())
                 Debugger.Log(0, "Source Generation", $"[SourceCrafter Exception]: \n{e}");
         }
     }

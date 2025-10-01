@@ -20,7 +20,7 @@ public partial class UserDto
     public decimal TotalAmount { get; set; }
     public Dictionary<string, string> ExtendedProperties { get; set; } = [];
 
-    public UserDto? Supervisor { get; init; }
+    public UserDto Supervisor { get; init; }
     public IEnumerable<string> Phrases { get; set; } = Array.Empty<string>();
     public Status Status { get; }
     public Email? MainEmail { get; set; }

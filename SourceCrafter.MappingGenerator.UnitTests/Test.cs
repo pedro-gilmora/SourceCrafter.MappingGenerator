@@ -145,7 +145,7 @@ namespace SourceCrafter.Bindings.UnitTests
                 Count = 5,
                 TotalAmount = 45.6m,
                 MainRole = roles[0],
-                ExtendedProperties = new() { { "A", "A" }, { "C", "D" } }
+                ExtendedProperties = { { "A", "A" }, { "C", "D" } }
             };
 
             var fromDto = userDto.ToUser();
@@ -212,16 +212,16 @@ namespace SourceCrafter.Bindings.UnitTests
         //}
     }
 }
-namespace SourceCrafter.Mappify
-{
-    public static partial class Mappings
-    {
-        extension(UserDto)
-        {
-            public static User operator +(UserDto source)
-            {
-                return Update(new User(), source);
-            }
-        }
-    }
-}
+//namespace SourceCrafter.Mappify
+//{
+//    public static partial class Mappings
+//    {
+//        extension(User item)
+//        {
+//            public User? Supervisor
+//            {
+//                set => item.GetUserSupervisor() = value;
+//            }
+//        }
+//    }
+//}

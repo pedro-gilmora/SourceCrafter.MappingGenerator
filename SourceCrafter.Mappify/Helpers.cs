@@ -275,18 +275,18 @@ namespace SourceCrafter
 
             internal string TypeNameFormat => type.ToDisplayString(_typeNameFormat);
 
-            internal bool IsRelatedTo(ITypeSymbol other)
+            internal bool InheritsOrImplements(ITypeSymbol other)
             {
                 return SymbolEqualityComparer.Default.Equals(type, other)
-                    || HasBaseType(type, other)
-                    || type.AllInterfaces.Any(type.HasBaseType);
+                    || type.TypeKind is TypeKind.Interface 
+                        ? type.AllInterfaces.Any(it => it.InheritsOrImplements(other)) 
+                        : type.HasBaseType(other);
             }
+        }
 
-            internal bool HasBaseType(ITypeSymbol other)
-            {
-                return type?.BaseType is not null && (SymbolEqualityComparer.Default.Equals(type.BaseType, other) || HasBaseType(type.BaseType, other));
-            }
-
+        internal static bool HasBaseType(this ITypeSymbol type, ITypeSymbol other)
+        {
+            return type.BaseType is not null && (SymbolEqualityComparer.Default.Equals(type.BaseType, other) || type.BaseType.HasBaseType(other));
         }
 
         internal static ImmutableArray<IParameterSymbol> GetParameters(this ITypeSymbol implType)
@@ -297,6 +297,9 @@ namespace SourceCrafter
                     ?? []
                 : [];
         }
+
+        internal static int ComputeHashCode(this (int , int) typeIdPair) =>
+            (Math.Min(typeIdPair.Item1, typeIdPair.Item2), Math.Max(typeIdPair.Item2, typeIdPair.Item1)).GetHashCode();
 
 
 

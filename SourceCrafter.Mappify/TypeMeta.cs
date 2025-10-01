@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Data;
 using System.Linq;
+using System.Reflection;
 using System.Security.Permissions;
 using System.Text;
 using System.Xml.Linq;
@@ -17,7 +18,6 @@ namespace SourceCrafter.Mappify;
 internal sealed class TypeMeta
 {
     internal readonly int Id;
-    internal readonly TypeSet Types;
     internal readonly ITypeSymbol Symbol;
     internal readonly Set<MemberMeta> Members;
 
@@ -31,17 +31,18 @@ internal sealed class TypeMeta
 
     internal readonly bool
         IsTupleType,
-        DictionaryOwned,
         IsKeyValueType,
         IsValueType,
         IsCollection,
         IsInterface,
         IsObject,
         HasZeroArgsCtor,
-        IsMemberless = true;
+        IsMemberless = true,
+        IsRefType,
+        IsRecursive,
+        HasRefTypeMembers;
 
-    internal bool IsRecursive;
-    internal CollectionMeta Collection = default;
+    internal readonly CollectionMeta Collection;
     internal readonly string SanitizedName;
     internal readonly bool IsPrimitive;
 
@@ -53,24 +54,22 @@ internal sealed class TypeMeta
         // ReSharper disable once RedundantAssignment
         ref TypeMeta @this,
         TypeSet types,
-        int typeAId,
+        int id,
         ITypeSymbol membersSource,
-        ITypeSymbol? implementation = null,
-        bool isDictionaryOwned = false)
+        ITypeSymbol? implementation = null)
     {
         @this = this;
 
         _unsafeAccesors = types.UnsafeAccessors;
 
         var type = (implementation ?? membersSource).ToNonNullable;
-        Symbol = membersSource;
-        Types = types;
-        Id = typeAId;
+        Symbol = membersSource.ToNonNullable;
+        Id = id;
 
         IsTupleType = Symbol.IsTupleType;
         IsValueType = Symbol.IsValueType;
+        IsRefType = type is not { IsRefLikeType: false, IsReferenceType: false };
         IsInterface = Symbol.TypeKind is TypeKind.Interface;
-        DictionaryOwned = isDictionaryOwned;
         Name = Symbol.Name;
         ShortName = Symbol.ToNameOnly();
         FullName = Symbol.FullyQualifiedName;
@@ -83,94 +82,88 @@ internal sealed class TypeMeta
 
         HasZeroArgsCtor =
             (type is INamedTypeSymbol { InstanceConstructors: { Length: > 0 } ctors } //Has instance constructors
-             && ctors.Any(ctor => ctor.Parameters.IsDefaultOrEmpty && ctor.IsAccessible(Types.Compilation.SourceModule))) //With zero-args
+             && ctors.Any(ctor => ctor.Parameters.IsDefaultOrEmpty && ctor.IsAccessible(types.Compilation.SourceModule))) //With zero-args
+             || type.Kind is SymbolKind.ErrorType;
 
-            || implementation?.Kind is SymbolKind.ErrorType;
-
-        (SanitizedName, ExportFullName) = membersSource.ToNonNullable is { } memberSource
-            ? (types.SanitizeName(memberSource), ExportFullName = memberSource.ToNonNullable.FullyQualifiedName.TrimEnd('?'))
+        (SanitizedName, ExportFullName) = implementation is null
+            ? (types.SanitizeName(Symbol), ExportFullName = Symbol.FullyQualifiedName)
             : (types.SanitizeName(type), ExportFullName = FullName);
 
-        IsCollection = IsEnumerableType(FullNonGenericName, type, out Collection);
+        IsCollection = IsEnumerableType(types, FullNonGenericName, type, out Collection, out IsRecursive, ref HasRefTypeMembers);
 
         Members = Set<MemberMeta>.Create(m => m.HashCode);
 
         if (IsPrimitive) return;
 
-        if (IsTupleType) GetTupleMembers(out IsMemberless);
-        else GetObjectMembers(out IsMemberless);
+        if (IsTupleType) GetTupleMembers(types, out IsMemberless, ref IsRecursive, ref HasRefTypeMembers);
+        else if (IsKeyValueType) GetKeyValueMembers(types, ref IsRecursive, ref HasRefTypeMembers);
+        else GetObjectMembers(types, out IsMemberless, ref IsRecursive, ref HasRefTypeMembers);
     }
 
-    internal bool HasConversion(
-        TypeMeta source,
-        out ScalarConversion scalarConversion,
-        out ScalarConversion reverseScalarConversion)
-        => HasConversion(source, this, out scalarConversion)
-           | HasConversion(this, source, out reverseScalarConversion);
-
-    private bool HasConversion(TypeMeta source, TypeMeta target, out ScalarConversion info)
+    private void GetTupleMembers(TypeSet types, out bool isMemberless, ref bool isRecursive, ref bool hasRefMembers)
     {
-        if ((source, target) is not (
-            ({ IsTupleType: false }, { IsTupleType: false }) and
-            ({ DictionaryOwned: false, IsKeyValueType: false }, { DictionaryOwned: false, IsKeyValueType: false })))
+        var members = ((INamedTypeSymbol)Symbol.ToNonNullable).TupleElements;
+
+        if (isMemberless = members.IsDefaultOrEmpty) return;
+
+        foreach (var member in members)
         {
-            info = default;
-            return false;
+            TypeMeta type = types.GetOrAdd(member.Type);
+
+            if (Id == type.Id) isRecursive = true;
+            if (!hasRefMembers && member.Type is not { IsRefLikeType: false, IsReferenceType: false} || type.HasRefTypeMembers) hasRefMembers = true;
+
+            Members.TryAdd(
+                new(SymbolEqualityComparer.Default.GetHashCode(member),
+                    member.ToNameOnly(),
+                    type,
+                    this,
+                    member.IsNullable));
         }
-
-        ITypeSymbol
-            targetTypeSymbol = target.Symbol,
-            sourceTypeSymbol = source.Symbol;
-
-        var conversion = Types.Compilation.ClassifyConversion(sourceTypeSymbol, targetTypeSymbol);
-
-        info = new(conversion.Exists, conversion.IsExplicit, false);
-
-        if (!info.Exists)
-        {
-            info.Exists = info.IsExplicit = sourceTypeSymbol
-                .GetMembers()
-                .Any(m =>
-                    m is IMethodSymbol
-                    {
-                        MethodKind: MethodKind.Conversion,
-                        Parameters: [{ Type: { } firstParam }],
-                        ReturnType: { } returnType
-                    }
-                    && SymbolEqualityComparer.Default.Equals(returnType, sourceTypeSymbol)
-                    && SymbolEqualityComparer.Default.Equals(firstParam, targetTypeSymbol));
-        }
-        else
-        {
-            info.InheritsFromTarget = target.IsInterface && sourceTypeSymbol.AllInterfaces.Any(targetTypeSymbol.Equals);
-        }
-
-        info.Exists |= info.IsExplicit |= source.IsObject && !target.IsObject;
-
-        return info.Exists;
     }
 
-    private void GetObjectMembers(out bool isMemberless)
+    private void GetKeyValueMembers(TypeSet types, ref bool isRecursive, ref bool hasRefMembers)
+    {
+        foreach (var member in Symbol.GetMembers())
+
+            if (member is IPropertySymbol { Name: "Key" or "Value" } prop)
+            {
+                TypeMeta type = types.GetOrAdd(prop.Type);
+
+                if(!isRecursive && Id == type.Id) isRecursive = true;
+                if (!hasRefMembers && prop.Type is not { IsRefLikeType: false, IsReferenceType: false } || type.HasRefTypeMembers) hasRefMembers = true;
+
+                Members.TryAdd(
+                    new(SymbolEqualityComparer.Default.GetHashCode(member),
+                        member.ToNameOnly(),
+                        type,
+                        this,
+                        prop.IsNullable,
+                        isKey: prop.Name is "Key",
+                        isValue: prop.Name is "Value"));
+            }
+    }
+
+    private void GetObjectMembers(TypeSet types, out bool isMemberless, ref bool isRecursive, ref bool hasRefMembers)
     {
         Dictionary<int, string> ids = [];
         HashSet<string> memberNames = new(StringComparer.OrdinalIgnoreCase);
 
         var isInterface = Symbol.TypeKind == TypeKind.Interface;
 
-        getMembers(Symbol);
+        getMembers(Symbol, ref isRecursive, ref hasRefMembers);
 
         isMemberless = Members.Count == 0;
 
         return;
 
-        void getMembers(ITypeSymbol typeSymbol, bool isFirstLevel = true)
+        void getMembers(ITypeSymbol typeSymbol, ref bool isRecursive, ref bool hasRefMembers, bool isFirstLevel = true)
         {
-            if (typeSymbol.ToNonNullable.IsPrimitive)
+            if (typeSymbol.ToNonNullable.IsPrimitive || typeSymbol.GetMembers() is not {IsDefaultOrEmpty: false } members)
+            {
+                hasRefMembers = false;
                 return;
-
-            var members = typeSymbol.GetMembers();
-
-            if (members.IsDefaultOrEmpty) return;
+            }
 
             foreach (var member in members)
             {
@@ -185,7 +178,7 @@ internal sealed class TypeMeta
                 if (!memberNames.Add(memberName)
                     || member is not (IPropertySymbol or IFieldSymbol)
                     || member.DeclaredAccessibility is not (Accessibility.Internal or Accessibility.Public)
-                    || IsExcludedByMetadata(member.GetAttributes(), out var ignoreFor, out var manualMatches, out var maxDepth)) continue;
+                    || IsExcludedByMetadata(types.Compilation, member.GetAttributes(), out var ignoreFor, out var manualMatches, out var maxDepth)) continue;
 
                 string typeName, getPrivateFieldMethodName = "";
                 bool isProperty = false, isNullable, useUnsafeAccessor = false;
@@ -204,7 +197,9 @@ internal sealed class TypeMeta
 
                         var id = SymbolEqualityComparer.Default.GetHashCode(member);
 
-                        type = Types.GetOrAdd(memberType);
+                        type = types.GetOrAdd(memberType);
+
+                        if (!isRecursive && (Id == type.Id || type.IsRecursive)) isRecursive = true;
 
                         typeName = type.FullName;
 
@@ -221,6 +216,8 @@ internal sealed class TypeMeta
                         if (!canRead && !canWrite && !useUnsafeAccessor) continue;
 
                         isProperty = true;
+
+                        if (!hasRefMembers && memberType is not { IsRefLikeType: false, IsReferenceType: false } || type.HasRefTypeMembers) hasRefMembers = true;
 
                         Members.TryAdd(
                             new(id,
@@ -259,8 +256,13 @@ internal sealed class TypeMeta
                         if (useUnsafeAccessor = field.IsReadOnly)
                             getPrivateFieldMethodName = $"Get{SanitizedName}{memberName}";
 
-                        type = Types.GetOrAdd(memberType);
+                        type = types.GetOrAdd(memberType);
+
+                        if (!isRecursive && (Id == type.Id || type.IsRecursive)) isRecursive = true;
+
                         typeName = type.FullName;
+
+                        if (!hasRefMembers && memberType is not { IsRefLikeType: false, IsReferenceType: false } || type.HasRefTypeMembers) hasRefMembers = true;
 
                         Members.TryAdd(
                             new(SymbolEqualityComparer.Default.GetHashCode(member),
@@ -280,15 +282,12 @@ internal sealed class TypeMeta
                         {
                             addFieldUnsafeAccessor();
 
-                            if (memberType.IsValueType && memberType.IsNullable)
+                            if (memberType is { IsValueType: true, IsNullable: true })
                             {
                                 addNullUnsafeAccessor(type);
                             }
                         }
 
-                        continue;
-
-                    default:
                         continue;
                 }
 
@@ -343,7 +342,7 @@ internal sealed class TypeMeta
 
                         if (IsValueType) code.Append("ref ");
 
-                        code.Append(FullName)
+                        code.Append("this ").Append(FullName)
                             .AppendLine(" _);");
                     }));
                 }
@@ -362,7 +361,7 @@ internal sealed class TypeMeta
                         .Append(targetOwnerXmlDocType).Append(@"""/></param>
     [global::System.Runtime.CompilerServices.UnsafeAccessor(global::System.Runtime.CompilerServices.UnsafeAccessorKind.Field, Name = ""value"")]
     extern static ref ").Append(type.FullName)
-                        .Append(" UnNull(ref ")
+                        .Append(" UnNull(ref this ")
                         .Append(type.FullName)
                         .AppendLine("? _);")));
                 }
@@ -370,28 +369,75 @@ internal sealed class TypeMeta
             }
 
             if (typeSymbol.BaseType != null)
-                getMembers(typeSymbol.BaseType);
+                getMembers(typeSymbol.BaseType, ref isRecursive, ref hasRefMembers, false);
 
             if (!isFirstLevel) return;
 
             foreach (var iFace in typeSymbol.AllInterfaces)
-                getMembers(iFace, false);
+                getMembers(iFace, ref isRecursive, ref hasRefMembers, false);
         }
     }
+    internal bool HasConversion(
+        Compilation compilation,
+        TypeMeta source,
+        out ConversionType scalarConversion,
+        out ConversionType reverseScalarConversion)
+            => HasConversion(compilation, source, this, out scalarConversion)
+               | HasConversion(compilation, this, source, out reverseScalarConversion);
 
-    private bool IsExcludedByMetadata(ImmutableArray<AttributeData> attributes, out HashSet<int> ignoreFor, out HashSet<int> manualMatch, out short maxDepth)
+    private bool HasConversion(Compilation compilation, TypeMeta source, TypeMeta target, out ConversionType info)
+    {
+        //if ((source, target) is not (
+        //    ({ IsTupleType: false }, { IsTupleType: false }) and
+        //    ({ DictionaryOwned: false, IsKeyValueType: false }, { DictionaryOwned: false, IsKeyValueType: false })))
+        //{
+        //    info = default;
+        //    return false;
+        //}
+
+        ITypeSymbol
+            targetTypeSymbol = target.Symbol,
+            sourceTypeSymbol = source.Symbol;
+
+        var conversion = compilation.ClassifyConversion(sourceTypeSymbol, targetTypeSymbol);
+
+        info = conversion switch
+        {
+            { IsExplicit: true } when !target.IsObject || !sourceTypeSymbol.InheritsOrImplements(targetTypeSymbol) || sourceTypeSymbol
+                .GetMembers()
+                .Any(m =>
+                    m is IMethodSymbol
+                    {
+                        MethodKind: MethodKind.Conversion,
+                        Parameters: [{ Type: { } firstParam }],
+                        ReturnType: { } returnType
+                    }
+                    && sourceTypeSymbol.InheritsOrImplements(returnType)
+                    && SymbolEqualityComparer.Default.Equals(firstParam, targetTypeSymbol)) => ConversionType.Cast,
+            _ => ConversionType.None,
+        };
+
+        return conversion.Exists || info is not ConversionType.None;
+
+
+    }
+
+    private bool IsExcludedByMetadata(Compilation compilation, ImmutableArray<AttributeData> attributes, out HashSet<int> ignoreFor, out Dictionary<int, bool?> manualMatches, out short maxDepth)
     {
         maxDepth = 0;
 
         if (attributes.IsDefaultOrEmpty)
         {
             ignoreFor = null!;
-            manualMatch = null!;
+            manualMatches = null!;
             return false;
         }
 
         ignoreFor = [];
-        manualMatch = [];
+        manualMatches = [];
+        bool? defaultAllowNull = null;
+
+        var result = false;
 
         foreach (var attr in attributes)
         {
@@ -399,13 +445,17 @@ internal sealed class TypeMeta
 
             switch (className)
             {
-                case "global::SourceCrafter.Mappify.Attributes.IgnoreAttribute":
+                case "global::SourceCrafter.Mappify.Attributes.AllowNullAttribute":
+                    defaultAllowNull = true;
+                    break;
 
-                    return true;
+                case "global::SourceCrafter.Mappify.Attributes.IgnoreAttribute":
+                    result = true;
+                    continue;
 
                 case "global::SourceCrafter.Mappify.Attributes.IgnoreForAttribute":
 
-                    if (TryGetSymbolIdFromNameOf(attr, 0, out var ignoredId))
+                    if (TryGetSymbolIdFromNameOf(compilation, attr, 0, out var ignoredId))
                         ignoreFor.Add(ignoredId);
 
                     continue;
@@ -417,22 +467,32 @@ internal sealed class TypeMeta
                     continue;
                 case "global::SourceCrafter.Mappify.Attributes.MapAttribute":
 
-                    if (TryGetSymbolIdFromNameOf(attr, 0, out var targetId)) manualMatch.Add(targetId);
+                    if (TryGetSymbolIdFromNameOf(compilation, attr, 0, out var targetId)) 
+                        manualMatches.Add(targetId, attr.ConstructorArguments is [_, { IsNull: false, Value: bool allowNull }] ? allowNull : defaultAllowNull);
 
                     break;
 
             }
         }
 
-        return false;
+        foreach(var item in manualMatches.Keys)
+        {
+            manualMatches[item] ??= defaultAllowNull;
+        }
+
+        return result;
     }
 
-    private bool TryGetSymbolIdFromNameOf(AttributeData attr, int index, out int memberId)
+    private bool TryGetSymbolIdFromNameOf(Compilation compilation, AttributeData attr, int index, out int memberId)
     {
-        if ((attr.ApplicationSyntaxReference?.GetSyntax() as AttributeSyntax)?.ArgumentList?.Arguments.ElementAtOrDefault(index) is not { Expression : InvocationExpressionSyntax {
-                Expression: IdentifierNameSyntax { Identifier.Text: "nameof" },
-                ArgumentList.Arguments: [{ Expression: MemberAccessExpressionSyntax { Name: { } ignoreId } }]
-            } })
+        if ((attr.ApplicationSyntaxReference?.GetSyntax() as AttributeSyntax)?.ArgumentList?.Arguments.ElementAtOrDefault(index) is not
+            {
+                Expression: InvocationExpressionSyntax
+                {
+                    Expression: IdentifierNameSyntax { Identifier.Text: "nameof" },
+                    ArgumentList.Arguments: [{ Expression: MemberAccessExpressionSyntax { Name: { } ignoreId } }]
+                }
+            })
         {
             memberId = 0;
             return false;
@@ -440,38 +500,24 @@ internal sealed class TypeMeta
 
         memberId = SymbolEqualityComparer.Default
             .GetHashCode(
-                Types.Compilation
+                compilation
                     .GetSemanticModel(ignoreId.SyntaxTree)
                     .GetSymbolInfo(ignoreId).Symbol);
 
         return true;
     }
+
     internal void AsCast(StringBuilder code, bool addNullable, string item)
     {
         code.Append('(').Append(FullName);
         if (addNullable) code.Append('?');
         code.Append(")").Append(item);
     }
-    private void GetTupleMembers(out bool isMemberless)
+
+    private bool IsEnumerableType(TypeSet types, string nonGenericFullName, ITypeSymbol type, out CollectionMeta info, out bool isRecursive, ref bool hasRefTypeMembers)
     {
-        var members = ((INamedTypeSymbol)Symbol.ToNonNullable).TupleElements;
+        isRecursive = false;
 
-        if (isMemberless = members.IsDefaultOrEmpty) return;
-
-        foreach (var member in members)
-
-            Members.TryAdd(
-                new(SymbolEqualityComparer.Default.GetHashCode(member),
-                    member.ToNameOnly(),
-                    Types.GetOrAdd(member.Type),
-                    this,
-                    member.IsNullable,
-                    [],
-                    []));
-    }
-
-    private bool IsEnumerableType(string nonGenericFullName, ITypeSymbol type, out CollectionMeta info)
-    {
         if (type.IsPrimitive)
         {
             info = default!;
@@ -482,32 +528,42 @@ internal sealed class TypeMeta
         {
             case "global::System.Collections.Generic.Dictionary" or "global::System.Collections.Generic.IDictionary"
             :
-                info = GetCollectionInfo(EnumerableType.Dictionary, GetEnumerableType(type, true));
+                info = GetCollectionInfo(types, EnumerableType.Dictionary, GetEnumerableType(type, true));
+
+                if (!hasRefTypeMembers && !info.ItemType.IsValueType) hasRefTypeMembers = true;
+
+                if (!isRecursive && (Id == info.ItemType.Id || info.ItemType.IsRecursive)) isRecursive = true;
 
                 return true;
 
             case "global::System.Collections.Generic.Stack"
             :
-                info = GetCollectionInfo(EnumerableType.Stack, GetEnumerableType(type));
+                info = GetCollectionInfo(types, EnumerableType.Stack, GetEnumerableType(type));
+
+                if (!isRecursive && (Id == info.ItemType.Id || info.ItemType.IsRecursive)) isRecursive = true;
 
                 return true;
 
             case "global::System.Collections.Generic.Queue"
             :
-                info = GetCollectionInfo(EnumerableType.Queue, GetEnumerableType(type));
+                info = GetCollectionInfo(types, EnumerableType.Queue, GetEnumerableType(type));
+
+                if (!isRecursive && (Id == info.ItemType.Id || info.ItemType.IsRecursive)) isRecursive = true;
 
                 return true;
 
             case "global::System.ReadOnlySpan"
             :
 
-                info = GetCollectionInfo(EnumerableType.ReadOnlySpan, GetEnumerableType(type));
+                info = GetCollectionInfo(types, EnumerableType.ReadOnlySpan, GetEnumerableType(type));
+
+                if (!isRecursive && (Id == info.ItemType.Id || info.ItemType.IsRecursive)) isRecursive = true;
 
                 return true;
 
             case "global::System.Span"
             :
-                info = GetCollectionInfo(EnumerableType.Span, GetEnumerableType(type));
+                info = GetCollectionInfo(types, EnumerableType.Span, GetEnumerableType(type));
 
                 return true;
 
@@ -515,7 +571,9 @@ internal sealed class TypeMeta
                 "global::System.Collections.Generic.IList" or
                 "global::System.Collections.Generic.List"
             :
-                info = GetCollectionInfo(EnumerableType.Collection, GetEnumerableType(type));
+                info = GetCollectionInfo(types, EnumerableType.Collection, GetEnumerableType(type));
+
+                if (!isRecursive && (Id == info.ItemType.Id || info.ItemType.IsRecursive)) isRecursive = true;
 
                 return true;
 
@@ -524,26 +582,30 @@ internal sealed class TypeMeta
                 "global::System.Collections.Generic.IReadOnlyCollection" or
                 "global::System.Collections.Generic.ReadOnlyCollection"
             :
-                info = GetCollectionInfo(EnumerableType.ReadOnlyCollection, GetEnumerableType(type));
+                info = GetCollectionInfo(types, EnumerableType.ReadOnlyCollection, GetEnumerableType(type));
+
+                if (!isRecursive && (Id == info.ItemType.Id || info.ItemType.IsRecursive)) isRecursive = true;
 
                 return true;
 
             case "global::System.Collections.Generic.IEnumerable"
             :
-                info = GetCollectionInfo(EnumerableType.Enumerable, GetEnumerableType(type));
+                info = GetCollectionInfo(types, EnumerableType.Enumerable, GetEnumerableType(type));
+
+                if (!isRecursive && (Id == info.ItemType.Id || info.ItemType.IsRecursive)) isRecursive = true;
 
                 return true;
 
             default:
                 if (type is IArrayTypeSymbol { ElementType: { } elType })
                 {
-                    info = GetCollectionInfo(EnumerableType.Array, elType);
+                    info = GetCollectionInfo(types, EnumerableType.Array, elType);
 
                     return true;
                 }
                 else
                     foreach (var item in type.AllInterfaces)
-                        if (IsEnumerableType(item.FullyQualifiedNonGeneric, item, out info))
+                        if (IsEnumerableType(types, item.FullyQualifiedNonGeneric, item, out info, out isRecursive, ref hasRefTypeMembers))
                             return true;
                 break;
         }
@@ -748,9 +810,9 @@ public static class Mappings{0}
             .First();
     }
 
-    private CollectionMeta GetCollectionInfo(EnumerableType enumerableType, ITypeSymbol typeSymbol)
+    private CollectionMeta GetCollectionInfo(TypeSet types, EnumerableType enumerableType, ITypeSymbol typeSymbol)
     {
-        var itemDataType = Types.GetOrAdd((typeSymbol = typeSymbol.ToNonNullable), enumerableType == EnumerableType.Dictionary);
+        var itemDataType = types.GetOrAdd((typeSymbol = typeSymbol.ToNonNullable));
 
         return enumerableType switch
         {
