@@ -145,7 +145,7 @@ namespace SourceCrafter.Bindings.UnitTests
                 Count = 5,
                 TotalAmount = 45.6m,
                 MainRole = roles[0],
-                ExtendedProperties = { { "A", "A" }, { "C", "D" } }
+                ExtendedProperties = { ( "A", "A" ), ("C", "D" ) }
             };
 
             var fromDto = userDto.ToUser();

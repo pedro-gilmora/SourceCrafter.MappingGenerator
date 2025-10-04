@@ -21,7 +21,7 @@ internal sealed partial class Mappers(Compilation compilation, bool canUseUnsafe
 
     internal readonly HashSet<int> _rendered = [];
 
-    internal TypeMap GetOrAdd(TypeMeta targetType, TypeMeta sourceType, ApplyTo ignore)
+    internal TypeMap GetOrAdd(TypeMeta targetType, TypeMeta sourceType, ApplyTo ignore = ApplyTo.None)
     {
         var mapperId = (targetType.Id, sourceType.Id).ComputeHashCode();
 

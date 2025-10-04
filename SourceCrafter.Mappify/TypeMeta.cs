@@ -7,8 +7,10 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Data;
+using System.Data.SqlTypes;
 using System.Linq;
 using System.Reflection;
+using System.Reflection.Metadata;
 using System.Security.Permissions;
 using System.Text;
 using System.Xml.Linq;
@@ -89,15 +91,22 @@ internal sealed class TypeMeta
             ? (types.SanitizeName(Symbol), ExportFullName = Symbol.FullyQualifiedName)
             : (types.SanitizeName(type), ExportFullName = FullName);
 
-        IsCollection = IsEnumerableType(types, FullNonGenericName, type, out Collection, out IsRecursive, ref HasRefTypeMembers);
+        if (!(IsCollection = IsEnumerableType(types, FullNonGenericName, type, out Collection, out IsRecursive, ref HasRefTypeMembers)))
+        {
+            Members = Set<MemberMeta>.Create(m => m.HashCode);
 
-        Members = Set<MemberMeta>.Create(m => m.HashCode);
+            if (IsPrimitive) return;
 
-        if (IsPrimitive) return;
-
-        if (IsTupleType) GetTupleMembers(types, out IsMemberless, ref IsRecursive, ref HasRefTypeMembers);
-        else if (IsKeyValueType) GetKeyValueMembers(types, ref IsRecursive, ref HasRefTypeMembers);
-        else GetObjectMembers(types, out IsMemberless, ref IsRecursive, ref HasRefTypeMembers);
+            if (IsTupleType)
+                GetTupleMembers(types, out IsMemberless, ref IsRecursive, ref HasRefTypeMembers);
+            else if (IsKeyValueType)
+            {
+                IsMemberless = false;
+                GetKeyValueMembers(types, ref IsRecursive, ref HasRefTypeMembers);
+            }
+            else
+                GetObjectMembers(types, out IsMemberless, ref IsRecursive, ref HasRefTypeMembers); 
+        }
     }
 
     private void GetTupleMembers(TypeSet types, out bool isMemberless, ref bool isRecursive, ref bool hasRefMembers)
@@ -111,7 +120,7 @@ internal sealed class TypeMeta
             TypeMeta type = types.GetOrAdd(member.Type);
 
             if (Id == type.Id) isRecursive = true;
-            if (!hasRefMembers && member.Type is not { IsRefLikeType: false, IsReferenceType: false} || type.HasRefTypeMembers) hasRefMembers = true;
+            if (!hasRefMembers && member.Type is not { IsRefLikeType: false, IsReferenceType: false } || type.HasRefTypeMembers) hasRefMembers = true;
 
             Members.TryAdd(
                 new(SymbolEqualityComparer.Default.GetHashCode(member),
@@ -130,17 +139,27 @@ internal sealed class TypeMeta
             {
                 TypeMeta type = types.GetOrAdd(prop.Type);
 
-                if(!isRecursive && Id == type.Id) isRecursive = true;
+                string name = member.ToNameOnly();
+
+                if (!isRecursive && Id == type.Id) isRecursive = true;
                 if (!hasRefMembers && prop.Type is not { IsRefLikeType: false, IsReferenceType: false } || type.HasRefTypeMembers) hasRefMembers = true;
+
+                string propBackingFieldAccesor = $"Get{name}";
+                AddFieldUnsafeAccessor(name, type.FullName, propBackingFieldAccesor, true, prop.IsNullable);
+                
+                if(prop.IsNullable) AddNullUnsafeAccessor(type);
 
                 Members.TryAdd(
                     new(SymbolEqualityComparer.Default.GetHashCode(member),
-                        member.ToNameOnly(),
+                        name,
                         type,
                         this,
                         prop.IsNullable,
+                        useUnsafeAccessor: true,
+                        privateFieldMethodName: propBackingFieldAccesor,
                         isKey: prop.Name is "Key",
-                        isValue: prop.Name is "Value"));
+                        isValue: prop.Name is "Value",
+                        canWrite: false));
             }
     }
 
@@ -159,7 +178,7 @@ internal sealed class TypeMeta
 
         void getMembers(ITypeSymbol typeSymbol, ref bool isRecursive, ref bool hasRefMembers, bool isFirstLevel = true)
         {
-            if (typeSymbol.ToNonNullable.IsPrimitive || typeSymbol.GetMembers() is not {IsDefaultOrEmpty: false } members)
+            if (typeSymbol.ToNonNullable.IsPrimitive || typeSymbol.GetMembers() is not { IsDefaultOrEmpty: false } members)
             {
                 hasRefMembers = false;
                 return;
@@ -181,7 +200,7 @@ internal sealed class TypeMeta
                     || IsExcludedByMetadata(types.Compilation, member.GetAttributes(), out var ignoreFor, out var manualMatches, out var maxDepth)) continue;
 
                 string typeName, getPrivateFieldMethodName = "";
-                bool isProperty = false, isNullable, useUnsafeAccessor = false;
+                bool isProperty = false, isNullable, useUnsafeAccessor;
                 TypeMeta type;
 
                 switch (member)
@@ -207,7 +226,7 @@ internal sealed class TypeMeta
                             (prop is not { IsReadOnly: false, IsIndexer: false, SetMethod.IsInitOnly: false }
                              || type is { IsValueType: true, IsMemberless: false }))
                         {
-                            getPrivateFieldMethodName = $"Get{SanitizedName}{fieldName}";
+                            getPrivateFieldMethodName = $"Get{fieldName}";
                         }
 
                         var canRead = prop.GetMethod is not null;
@@ -235,11 +254,11 @@ internal sealed class TypeMeta
 
                         if (useUnsafeAccessor)
                         {
-                            addFieldUnsafeAccessor();
+                            AddFieldUnsafeAccessor(memberName, typeName, getPrivateFieldMethodName, isProperty, isNullable);
 
                             if (memberType.IsValueType && memberType.IsNullable)
                             {
-                                addNullUnsafeAccessor(type);
+                                AddNullUnsafeAccessor(type);
                             }
                         }
 
@@ -254,7 +273,7 @@ internal sealed class TypeMeta
                     } field:
 
                         if (useUnsafeAccessor = field.IsReadOnly)
-                            getPrivateFieldMethodName = $"Get{SanitizedName}{memberName}";
+                            getPrivateFieldMethodName = $"Get{memberName}";
 
                         type = types.GetOrAdd(memberType);
 
@@ -280,90 +299,15 @@ internal sealed class TypeMeta
 
                         if (useUnsafeAccessor)
                         {
-                            addFieldUnsafeAccessor();
+                            AddFieldUnsafeAccessor(memberName, typeName, getPrivateFieldMethodName, isProperty, isNullable);
 
                             if (memberType is { IsValueType: true, IsNullable: true })
                             {
-                                addNullUnsafeAccessor(type);
+                                AddNullUnsafeAccessor(type);
                             }
                         }
 
                         continue;
-                }
-
-                void addFieldUnsafeAccessor()
-                {
-                    var targetOwnerXmlDocType = FullName.Replace("<", "{").Replace(">", "}");
-
-                    _unsafeAccesors.Add(new(FullName + "." + memberName, code =>
-                    {
-                        code.Append(@"
-    /// <summary>
-    /// Gets a reference to ");
-
-                        if (isProperty)
-                        {
-                            code.Append(@"the backing field of <see cref=""")
-                                .Append(targetOwnerXmlDocType)
-                                .Append('.')
-                                .Append(memberName)
-                                .Append(@"""/> property");
-                        }
-                        else
-                        {
-                            code.Append(@"the field <see cref=""")
-                                .Append(targetOwnerXmlDocType)
-                                .Append('.')
-                                .Append(memberName)
-                                .Append(@"""/>");
-                        }
-
-                        code.Append(@"
-    /// </summary>
-    /// <param name=""_""><see cref=""")
-                            .Append(targetOwnerXmlDocType)
-                            .Append(@"""/> container reference of ")
-                            .Append(memberName).Append(" ").Append(isProperty ? "property" : "field")
-                            .Append(@"</param>
-    [global::System.Runtime.CompilerServices.UnsafeAccessor(global::System.Runtime.CompilerServices.UnsafeAccessorKind.Field, Name = """);
-
-                        if (isProperty)
-                            code.Append("<").Append(memberName).Append(">k__BackingField");
-                        else
-                            code.Append(memberName);
-                        code.Append(@""")]
-    extern static ref ").Append(typeName);
-
-                        if (isNullable) code.Append("?");
-
-                        code.Append(" ")
-                            .Append(getPrivateFieldMethodName)
-                            .Append("(");
-
-                        if (IsValueType) code.Append("ref ");
-
-                        code.Append("this ").Append(FullName)
-                            .AppendLine(" _);");
-                    }));
-                }
-
-                void addNullUnsafeAccessor(TypeMeta type)
-                {
-                    var targetOwnerXmlDocType = $"Nullable{{{type.FullName.Replace("<", "{").Replace(">", "}")}}}";
-
-                    _unsafeAccesors.Add(new("UnNull-" + type.FullName, code => code
-                        .Append(@"
-    /// <summary>
-    /// Gets a reference to the backing field of <see cref=""")
-                        .Append(targetOwnerXmlDocType).Append(@".Value""/> property
-    /// </summary>
-    /// <param name=""_"">Value holder for not null value of <see cref=""")
-                        .Append(targetOwnerXmlDocType).Append(@"""/></param>
-    [global::System.Runtime.CompilerServices.UnsafeAccessor(global::System.Runtime.CompilerServices.UnsafeAccessorKind.Field, Name = ""value"")]
-    extern static ref ").Append(type.FullName)
-                        .Append(" UnNull(ref this ")
-                        .Append(type.FullName)
-                        .AppendLine("? _);")));
                 }
 
             }
@@ -376,6 +320,81 @@ internal sealed class TypeMeta
             foreach (var iFace in typeSymbol.AllInterfaces)
                 getMembers(iFace, ref isRecursive, ref hasRefMembers, false);
         }
+    }
+
+    private void AddNullUnsafeAccessor(TypeMeta type)
+    {
+        var targetOwnerXmlDocType = $"Nullable{{{type.FullName.Replace("<", "{").Replace(">", "}")}}}";
+
+        _unsafeAccesors.Add(new("UnNull-" + type.FullName, code => code
+            .Append(@"
+    /// <summary>
+    /// Gets a reference to the backing field of <see cref=""")
+            .Append(targetOwnerXmlDocType).Append(@".Value""/> property
+    /// </summary>
+    /// <param name=""_"">Value holder for not null value of <see cref=""")
+            .Append(targetOwnerXmlDocType).Append(@"""/></param>
+    [global::System.Runtime.CompilerServices.UnsafeAccessor(global::System.Runtime.CompilerServices.UnsafeAccessorKind.Field, Name = ""value"")]
+    extern static ref ").Append(type.FullName)
+            .Append(" UnNull(").Append(type.IsValueType ? "this " : "ref this ")
+            .Append(type.FullName)
+            .AppendLine("? _);")));
+    }
+
+    private void AddFieldUnsafeAccessor(string memberName, string typeName, string getPrivateFieldMethodName, bool isProperty, bool isNullable)
+    {
+        var targetOwnerXmlDocType = FullName.Replace("<", "{").Replace(">", "}");
+
+        _unsafeAccesors.Add(new(FullName + "." + memberName, code =>
+        {
+            code.Append(@"
+    /// <summary>
+    /// Gets a reference to ");
+
+            if (isProperty)
+            {
+                code.Append(@"the backing field of <see cref=""")
+                    .Append(targetOwnerXmlDocType)
+                    .Append('.')
+                    .Append(memberName)
+                    .Append(@"""/> property");
+            }
+            else
+            {
+                code.Append(@"the field <see cref=""")
+                    .Append(targetOwnerXmlDocType)
+                    .Append('.')
+                    .Append(memberName)
+                    .Append(@"""/>");
+            }
+
+            code.Append(@"
+    /// </summary>
+    /// <param name=""_""><see cref=""")
+                .Append(targetOwnerXmlDocType)
+                .Append(@"""/> container reference of ")
+                .Append(memberName).Append(" ").Append(isProperty ? "property" : "field")
+                .Append(@"</param>
+    [global::System.Runtime.CompilerServices.UnsafeAccessor(global::System.Runtime.CompilerServices.UnsafeAccessorKind.Field, Name = """);
+
+            if (isProperty)
+                code.Append("<").Append(memberName).Append(">k__BackingField");
+            else
+                code.Append(memberName);
+            code.Append(@""")]
+    extern static ref ").Append(typeName);
+
+            if (isNullable) code.Append("?");
+
+            code.Append(" ")
+                .Append(getPrivateFieldMethodName)
+                .Append("(");
+
+            if (IsValueType) code.Append("ref ");
+
+            code.Append("this ").Append(FullName)
+                .AppendLine(" _);");
+        }));
     }
     internal bool HasConversion(
         Compilation compilation,
@@ -467,7 +486,7 @@ internal sealed class TypeMeta
                     continue;
                 case "global::SourceCrafter.Mappify.Attributes.MapAttribute":
 
-                    if (TryGetSymbolIdFromNameOf(compilation, attr, 0, out var targetId)) 
+                    if (TryGetSymbolIdFromNameOf(compilation, attr, 0, out var targetId))
                         manualMatches.Add(targetId, attr.ConstructorArguments is [_, { IsNull: false, Value: bool allowNull }] ? allowNull : defaultAllowNull);
 
                     break;
@@ -475,7 +494,7 @@ internal sealed class TypeMeta
             }
         }
 
-        foreach(var item in manualMatches.Keys)
+        foreach (var item in manualMatches.Keys)
         {
             manualMatches[item] ??= defaultAllowNull;
         }
@@ -822,7 +841,7 @@ public static class Mappings{0}
                     enumerableType,
                     typeSymbol.IsNullable,
                     true,
-                    true,
+                    false,
                     false,
                     "Add",
                     "Count"),

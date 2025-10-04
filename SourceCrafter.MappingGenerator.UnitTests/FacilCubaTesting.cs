@@ -82,6 +82,7 @@ public class MeAsUser : ApiUser
     /* total_out */
     public string TotalOut { get; set; }
     /* latestTransactions */
+    [Attributes.Ignore]
     public List<Transaction> LatestTransactions { get; set; }
     /* complete_name */
     public string CompleteName { get; set; }

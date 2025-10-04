@@ -65,9 +65,12 @@ namespace SourceCrafter.Mappify
                     case INamedTypeSymbol { IsTupleType: true, TupleElements: { Length: > 0 } els }:
                         
                         id.Append("TupleOf");
-                        
+                        var andSeparatorIndex = els.Length > 1 ? els.Length - 1 : -1;
+                        var i = -1;
+
                         foreach (var x1 in els)
                         {
+                            if (++i == andSeparatorIndex) id.Append("And");
                             SanitizeTypeName(x1.Type);
                         }
 
@@ -76,9 +79,12 @@ namespace SourceCrafter.Mappify
                     case INamedTypeSymbol { IsGenericType: true, TypeArguments: { } args }:
                         
                         id.Append(inType.Name).Append("Of");
-                        
+                        andSeparatorIndex = args.Length > 1 ? args.Length - 1 : -1;
+                        i = -1;
+
                         foreach (var x1 in args)
                         {
+                            if (++i == andSeparatorIndex) id.Append("And");
                             SanitizeTypeName(x1);
                         }
 

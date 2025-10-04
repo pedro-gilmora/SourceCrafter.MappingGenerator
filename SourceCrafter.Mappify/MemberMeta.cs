@@ -21,7 +21,7 @@ internal sealed class MemberMeta(
     bool isKey = false,
     bool isValue = false)
 {
-    private readonly int _id = id;
+    internal readonly int Id = id;
     private readonly string debugString = owningType is { ExportFullName: var fullName } ? $"{fullName}.{name}" : name;
     private readonly HashSet<int> _ignores = ignoreFor ?? [];
     private readonly Dictionary<int, bool?> _matches = manualMatches ?? [];
@@ -32,6 +32,7 @@ internal sealed class MemberMeta(
         IsNullable = isNullable,
         UseUnsafeAccessor = useUnsafeAccessor,
         IsParentValueType = owningType?.IsValueType ?? false,
+        IsParentKeyValueType = owningType?.IsKeyValueType ?? false,
         IsKey = isKey,
         IsValue = isValue;
 
@@ -47,15 +48,21 @@ internal sealed class MemberMeta(
 
     internal bool Matches(MemberMeta source, bool ignoreCase, bool canUseUnsafeAccessor, out MemberMatch targetMatch, out MemberMatch sourceMatch)
     {
-        var targetMatchesSource = _matches.TryGetValue(source._id, out var targetAllowsNullSource);
-        var sourceMatchesTarget = source._matches.TryGetValue(_id, out var sourceAllowsNullTarget);
+        var targetMatchesSource = _matches.TryGetValue(source.Id, out var targetAllowsNullSource);
+        var sourceMatchesTarget = source._matches.TryGetValue(Id, out var sourceAllowsNullTarget);
+        var keyOrValuePairMemberMatch = 
+            (IsParentKeyValueType && Name is ['K', 'e', 'y'] && source.Name is ['i' or 'I', 'd'] or ['K' or 'k', 'e', 'y'])
+            || (source.IsParentKeyValueType && source.Name is ['K', 'e', 'y'] && Name is ['i', 'd'] or ['K' or 'k', 'e', 'y'])
+            || (IsParentKeyValueType && Name is ['V', 'a', 'l', 'u', 'e'] && source.Name is ['I' or 'i', 't', 'e', 'm'] or ['V' or 'v', 'a', 'l', 'u', 'e'])
+            || (source.IsParentKeyValueType && source.Name is ['V', 'a', 'l', 'u', 'e'] && Name is ['I' or 'i', 't', 'e', 'm'] or ['V' or 'v', 'a', 'l', 'u', 'e']);
 
         targetMatch = sourceMatch = default;
 
-        if (_id != source._id
+        if (Id != source.Id
             && !Name.Equals(source.Name, ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)
             && !source.Name.Equals(Type.Name + Name)
             && !Name.Equals(source.Type.Name + source.Name)
+            && !keyOrValuePairMemberMatch
             && !sourceMatchesTarget
             && !targetMatchesSource)
         {
@@ -64,21 +71,21 @@ internal sealed class MemberMeta(
         }
 
         bool matchedByAttribute = targetMatchesSource || sourceMatchesTarget,
-            targetIgnoresSource = _ignores.Contains(source._id),
-            sourceIgnoresTarget = source._ignores.Contains(_id),
+            targetIgnoresSource = _ignores.Contains(source.Id),
+            sourceIgnoresTarget = source._ignores.Contains(Id),
             targetCanBeAssigned = source.CanRead && (CanWrite || (UseUnsafeAccessor && canUseUnsafeAccessor)),
             sourceCanBeAssigned = CanRead && (source.CanWrite || (source.UseUnsafeAccessor && canUseUnsafeAccessor));
 
         var result = matchedByAttribute;
         
-        if ((matchedByAttribute || !targetIgnoresSource) && targetCanBeAssigned)
+        if ((matchedByAttribute || keyOrValuePairMemberMatch || !targetIgnoresSource) && targetCanBeAssigned)
         {
             targetMatch.IsAssignable = true;
             targetMatch.AllowNull = targetAllowsNullSource ?? false;
             result = true;
         }
 
-        if ((matchedByAttribute || !sourceIgnoresTarget) && sourceCanBeAssigned)
+        if ((matchedByAttribute || keyOrValuePairMemberMatch || !sourceIgnoresTarget) && sourceCanBeAssigned)
         {
             sourceMatch.IsAssignable = true;
             sourceMatch.AllowNull = sourceAllowsNullTarget ?? false;

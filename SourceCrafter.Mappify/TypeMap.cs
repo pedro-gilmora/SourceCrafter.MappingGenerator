@@ -3,6 +3,7 @@ using Microsoft.CodeAnalysis;
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Collections.ObjectModel;
 using System.Diagnostics.SymbolStore;
 using System.Linq;
 using System.Linq.Expressions;
@@ -61,11 +62,15 @@ internal sealed class TypeMap
             ReverseMethodName = "To" + sourceType.SanitizedName;
         }
 
+        var allowLowerCase = sourceType.IsTupleType || targetType.IsTupleType /*, hasMatches = false*/;
+
+        var canUseUnsafeAccessor = mappers.CanUseUnsafeAccessor;
+
         if (/*_isCollection = */sourceType.IsCollection && targetType.IsCollection)
         {
-            if (IsDictionaryMapping()) _conversionType = _reverseConversionType = ConversionType.Mapper;
+            if (IsCollectionMapping()) _conversionType = _reverseConversionType = ConversionType.Mapper;
 
-            IsValid = false;
+            else IsValid = false;
 
             return;
         }
@@ -79,10 +84,6 @@ internal sealed class TypeMap
         if (!sourceType.IsInterface) _reverseConversionType = ConversionType.Mapper;
 
         List<(int, Action<StringBuilder>)> members = [], reverseMembers = [];
-
-        var allowLowerCase = sourceType.IsTupleType || targetType.IsTupleType /*, hasMatches = false*/;
-
-        var canUseUnsafeAccessor = mappers.CanUseUnsafeAccessor;
 
         int i = -1;
 
@@ -122,7 +123,7 @@ internal sealed class TypeMap
 
         if (IsValid && members.Count + reverseMembers.Count > 0) methods.Add(code => BuildFile(code, MethodName, ReverseMethodName));
 
-        bool IsDictionaryMapping()
+        bool IsCollectionMapping()
         {
             switch (targetType, sourceType)
             {
@@ -131,12 +132,12 @@ internal sealed class TypeMap
                     var targetKeyMember = targetType.Collection.ItemType.Members[0]!;
                     var sourceKeyMember = sourceType.Collection.ItemType.Members[0]!;
 
-                    if (mappers.GetOrAdd(targetKeyMember.Type, sourceKeyMember.Type, ApplyTo.None) is not { IsValid: true } keyMapper) return false;
+                    if (mappers.GetOrAdd(targetKeyMember.Type, sourceKeyMember.Type) is not { IsValid: true } keyMapper) return false;
 
                     var targetValueMember = targetType.Collection.ItemType.Members[1]!;
                     var sourceValueMember = sourceType.Collection.ItemType.Members[1]!;
 
-                    if (mappers.GetOrAdd(targetValueMember.Type, sourceValueMember.Type, ApplyTo.None) is not { IsValid: true } valueMapper) return false;
+                    if (mappers.GetOrAdd(targetValueMember.Type, sourceValueMember.Type) is not { IsValid: true } valueMapper) return false;
 
                     BuildDictionaryMapperFile(
                         targetKeyMember,
@@ -148,11 +149,103 @@ internal sealed class TypeMap
 
                     return true;
                 case ({ Collection.Type: EnumerableType.Dictionary }, _):
-                    return false;
+
+                    return TryMapKeyValuePairLike(targetType, sourceType);
+
                 case (_, { Collection.Type: EnumerableType.Dictionary }):
-                    return false;
+
+                    return TryMapKeyValuePairLike(sourceType, targetType);
+
                 default:
-                    return false;
+
+                    var itemTypeMap = mappers.GetOrAdd(targetType.Collection.ItemType, sourceType.Collection.ItemType);
+
+                    if (!itemTypeMap.IsValid) return false;
+
+                    itemTypeMap.GetMeta(targetType.Collection.ItemType.Id, sourceType.Collection.ItemType.Id, out var conversionType, out string typeMethod, out var reverseConversionType, out string reverseTypeMethod);
+
+                    methods.Add(code => BuildCollectionMapping(
+                        code,
+                        targetType.Collection,
+                        sourceType.Collection,
+                        conversionType,
+                        typeMethod,
+                        MethodName,
+                        targetType.ExportFullName,
+                        sourceType.ExportFullName));
+
+                    if (sourceType.Id == targetType.Id && targetType.Collection.ItemType.Id == sourceType.Collection.ItemType.Id) return true;
+
+                    methods.Add(code => BuildCollectionMapping(
+                        code,
+                        sourceType.Collection,
+                        targetType.Collection,
+                        reverseConversionType,
+                        reverseTypeMethod,
+                        ReverseMethodName,
+                        sourceType.ExportFullName,
+                        targetType.ExportFullName));
+
+                    return true;
+            }
+
+            bool TryMapKeyValuePairLike(TypeMeta targetType, TypeMeta sourceType)
+            {
+                var targetKeyMember = targetType.Collection.ItemType.Members[0]!;
+
+                var targetTypeId = targetKeyMember.Type.Id;
+                int sourceKeyTypeId = 0;
+                TypeMap? keyMapper = null;
+                MemberMeta? sourceKeyMember = null;
+
+                foreach (var sourceMember in sourceType.Collection.ItemType.Members)
+                {
+                    sourceKeyTypeId = sourceMember.Type.Id;
+                    keyMapper = mappers.GetOrAdd(targetKeyMember.Type, sourceMember.Type, ignore);
+
+                    if (!targetKeyMember.Matches(sourceMember, allowLowerCase, canUseUnsafeAccessor, out var targetKeyMatch, out var sourceKeyMatch)
+                        && !keyMapper.IsValid)
+
+                        continue;
+
+                    sourceKeyMember = sourceMember;
+
+                    break;
+                }
+
+                if (sourceKeyMember is null || keyMapper is null) return false;
+
+                var targetValueMember = targetType.Collection.ItemType.Members[1]!;
+
+                TypeMap? valueMapper = null;
+                var sourceValueTypeId = 0;
+                MemberMeta? sourceValueMember = null;
+                foreach (var sourceMember in sourceType.Collection.ItemType.Members)
+                {
+                    sourceValueTypeId = sourceMember.Type.Id;
+                    valueMapper = mappers.GetOrAdd(targetValueMember.Type, sourceMember.Type, ignore);
+
+                    if (sourceMember.Id == sourceKeyMember.Id
+                        || !targetValueMember.Matches(sourceMember, allowLowerCase, canUseUnsafeAccessor, out var targeValueMatch, out var sourcValueMatch)
+                        && !valueMapper.IsValid)
+
+                        continue;
+
+                    sourceValueMember = sourceMember;
+                    break;
+                }
+
+                if (sourceValueMember is null || valueMapper is null) return false;
+
+                BuildDictionaryMapperFile(
+                    targetKeyMember,
+                    targetValueMember,
+                    sourceKeyMember,
+                    sourceValueMember,
+                    keyMapper,
+                    valueMapper);
+
+                return true;
             }
         }
 
@@ -198,7 +291,28 @@ internal sealed class TypeMap
 ");
             });
 
-            if (sameType) return;
+            if (sameType)
+            {
+                return;
+            }
+            else if (sourceType.Collection.Type is not EnumerableType.Dictionary)
+            {
+                var itemTypeMap = mappers.GetOrAdd(sourceType.Collection.ItemType, targetType.Collection.ItemType);
+
+                itemTypeMap.GetMeta(sourceType.Collection.ItemType.Id, targetType.Collection.ItemType.Id, out var reverseConversionType, out string reverseTypeMethod, out var conversionType, out string typeMethod);
+
+                methods.Add(code => BuildCollectionMapping(
+                    code,
+                    sourceType.Collection,
+                    targetType.Collection,
+                    reverseConversionType,
+                    reverseTypeMethod,
+                    ReverseMethodName,
+                    sourceType.FullName,
+                    targetType.FullName));
+
+                return;
+            }
 
             methods.Add(code =>
             {
@@ -229,6 +343,290 @@ internal sealed class TypeMap
             });
         }
 
+        void BuildCollectionMapping(
+            StringBuilder code,
+            CollectionMeta targetMeta,
+            CollectionMeta sourceMeta,
+            ConversionType conversionType,
+            string itemMethod,
+            string method,
+            string targetFullTypeName,
+            string sourceFullTypeName,
+            short maxDepth = 0)
+        {
+            bool isTargetNullable = targetType.Collection.IsItemNullable,
+                isSourceNullable = sourceType.Collection.IsItemNullable;
+                    
+            TypeMeta targetItem = targetMeta.ItemType,
+                     sourceItem = sourceMeta.ItemType;
+
+            var createArray = targetMeta.ArrayBacked;
+            var useLenInsteadOfIndex = targetMeta.ArrayBacked && !sourceMeta.Indexable;
+            var useFor = sourceMeta.Countable && (sourceMeta.Indexable || targetMeta.ArrayBacked);
+            var iterator = useFor ? "for" : "foreach";
+            var redim = !sourceMeta.Countable && targetMeta.ArrayBacked;
+
+            bool isRecursive = targetItem.IsRecursive, isSourceValueType = sourceItem.IsValueType;
+
+            string
+                countProp = targetMeta.CountProp,
+                targetItemFullTypeName = targetItem.ExportFullName,
+                targetExportFullXmlDocTypeName = targetFullTypeName.Replace('<', '{').Replace('>', '}'),
+                sourceExportFullXmlDocTypeName = sourceType.ExportFullName.Replace('<', '{').Replace('>', '}'),
+                underlyingCollectionType = $"global::System.Collections.Generic.List<{targetItemFullTypeName}>()";
+
+            var suffix = (sourceMeta.Type, targetMeta.Type) is (not EnumerableType.Array, EnumerableType.ReadOnlySpan) ? ".AsSpan()" : null;
+
+            code.Append(@"
+    /// <summary>
+    /// Creates a new instance of <see cref=""").Append(targetExportFullXmlDocTypeName).Append(@"""/> based on a given <see cref=""").Append(sourceExportFullXmlDocTypeName).Append(@"""/>
+    /// </summary>
+    /// <param name=""source"">Data source to be mapped</param>");
+
+            if (isRecursive)
+                code.Append(@"
+    /// <param name=""depth"">Depth index for recursion control</param>
+    /// <param name=""maxDepth"">Max of recursion to be allowed to map</param>");
+
+            code.Append(@"
+    public static ").Append(targetFullTypeName).AddSpace().Append(method).Append("(this ").Append(sourceFullTypeName).Append(@" source");
+
+            if (isRecursive)
+            {
+                code.Append(@", int depth = 0, int maxDepth = ").Append(maxDepth).Append(@")
+    {
+        if (depth >= maxDepth) 
+            return ");
+
+                if (targetMeta.Type == EnumerableType.ReadOnlyCollection)
+                {
+                    code.Append("System.Collections.ObjectModel.ReadOnlyCollection<").Append(targetItemFullTypeName).Append(">.Empty");
+                }
+                else
+                {
+                    code.Append("[]");
+                }
+
+                code.Append(@";
+");
+            }
+            else
+            {
+                code.Append(@")
+    {");
+            }
+
+            if (createArray)
+            {
+                if (redim)
+                {
+                    code.Append(@"
+        int len = 0, aux = 16;
+        var target = new ").Append(targetItemFullTypeName).Append(@"[aux];
+");
+                }
+                else
+                {
+                    code.Append(@"
+        int len = ");
+
+                    if (useFor)
+                    {
+                        code.Append("source.").Append(countProp);
+                    }
+                    else
+                    {
+                        code.Append("0");
+                    }
+
+                    code.Append(@";
+        var target = new ").Append(targetItemFullTypeName).Append('[');
+
+                    if (useFor)
+                    {
+                        code.Append("len");
+                    }
+                    else
+                    {
+                        code.Append("source.").Append(countProp);
+                    }
+
+                    code.Append(@"];
+");
+                }
+            }
+            else
+            {
+                if (useFor && targetMeta.Countable)
+                {
+                    code.Append(@"
+        int len = ");
+                    code.Append("source.").Append(countProp).Append(';');
+                }
+
+                code.Append(@"
+        var target = new ")
+                    .Append(targetMeta.Type switch
+                    {
+                        EnumerableType.ReadOnlyCollection => "System.Collections.ObjectModel.ReadOnlyCollection<" + targetItemFullTypeName + '>',
+                        _ => targetFullTypeName
+                    })
+                    .Append(@"();
+");
+            }
+
+            if (useFor)
+            {
+                code.Append(@"
+        for (int i = 0; i < len; i++)
+        {");
+
+                var sourceMemberExpression = "source[i]";
+
+                if (isSourceNullable)
+                {
+                    code.Append(@"
+            if (source[i] is not {} sourceItem) continue;
+");
+
+                    sourceMemberExpression = "sourceItem";
+                }
+
+                code.Append(@"
+            target[i] = ");
+
+                switch (conversionType)
+                {
+                    case ConversionType.Cast:
+                        code.Append(Cast(targetItemFullTypeName, sourceMemberExpression, isSourceNullable));
+                        break;
+                    case ConversionType.Mapper:
+                        code.Append(UseMapper(itemMethod, sourceMemberExpression, isSourceNullable));
+                        break;
+                    default:
+                        code.Append(sourceMemberExpression);
+
+                        if (!isTargetNullable && isSourceNullable && isSourceValueType) code.Append(" ?? default!");
+                        break;
+                }
+
+
+                code.Append(@";
+        }
+
+        return target").Append(suffix).Append(@";
+    }
+");
+            }
+            else
+            {
+                var sourceMemberExpression = "sourceItem";
+
+                code.Append(@"
+        foreach (var sourceItem in source)
+        {");
+
+                if (isSourceNullable)
+                {
+                    code.Append(@"
+            if (sourceItem is null) continue;
+");
+                }
+
+                if (createArray)
+                {
+                    code.Append(@"
+            target[len");
+
+                    if (!redim)
+                    {
+                        code.Append("++");
+                    }
+
+                    code.Append("] = ");
+
+                    switch (conversionType)
+                    {
+                        case ConversionType.Cast:
+                            code.Append(Cast(targetItemFullTypeName, sourceMemberExpression, isSourceNullable));
+                            break;
+                        case ConversionType.Mapper:
+                            code.Append(UseMapper(itemMethod, sourceMemberExpression, isSourceNullable));
+                            break;
+                        default:
+                            code.Append(sourceMemberExpression);
+
+                            if (!isTargetNullable && isSourceNullable && isSourceValueType) code.Append(" ?? default!");
+                            break;
+                    }
+
+                    code.Append(";");
+
+                    if (redim)
+                    {
+                        //redim array
+                        code.Append(@"
+
+            if (aux == ++len)
+                global::System.Array.Resize(ref target, aux *= 2);
+        }
+        
+        return ").Append(suffix is null ? "len < aux ? target[..len] : target" : "(len < aux ? target[..len] : target)" + suffix).Append(@";
+    }
+");
+                    }
+                    //normal ending
+                    else
+                    {
+                        code.Append(@"
+        }
+
+        return target").Append(suffix).Append(@";
+    }
+");
+                    }
+                }
+                else
+                {
+                    if (isSourceNullable)
+                    {
+                        code.Append(@"
+            if (sourceItem is null) continue;
+");
+                    }
+
+                    code.Append(@"
+            target.").Append(targetMeta.Method).Append('(');
+
+                    switch (conversionType)
+                    {
+                        case ConversionType.Cast:
+                            code.Append(Cast(targetItemFullTypeName, sourceMemberExpression, isSourceNullable));
+                            break;
+                        case ConversionType.Mapper:
+                            code.Append(UseMapper(itemMethod, sourceMemberExpression, isSourceNullable));
+                            break;
+                        default:
+                            code.Append(sourceMemberExpression);
+
+                            if (!isTargetNullable && isSourceNullable && isSourceValueType) code.Append(" ?? default!");
+                            break;
+                    }
+
+                    code.Append(@");
+        }
+
+        return ").Append(targetMeta.Type switch
+                    {
+                        EnumerableType.ReadOnlyCollection => $"new {targetFullTypeName}(target)",
+                        _ => "target"
+                    }).Append(@";
+    }
+");
+                }
+            }
+        }
+
         void GetDictionaryItemMapBuilder(
             StringBuilder code,
             bool isSourceNullable,
@@ -245,12 +643,12 @@ internal sealed class TypeMap
             string sourceValueMemberName = sourceValueMember.Name;
             bool isSourceKeyNullable = sourceKeyMember.IsNullable;
             bool isSourceValueNullable = sourceValueMember.IsNullable;
-            bool useSourceKeyFieldUnsafeAccesor = sourceKeyMember.UseUnsafeAccessor;
-            bool useSourceValueFieldUnsafeAccesor = sourceValueMember.UseUnsafeAccessor;
+            bool useSourceKeyFieldUnsafeAccesor = sourceKeyMember is { CanRead: false, UseUnsafeAccessor: true };
+            bool useSourceValueFieldUnsafeAccesor = sourceValueMember is { CanRead: false, UseUnsafeAccessor: true };
 
             // Build key access expression
             string keySourceAccess = useSourceKeyFieldUnsafeAccesor
-                ? $"{sourceKeyMember.UnsafeFieldAccesor}(sourceItem)"
+                ? $"sourceItem.{sourceKeyMember.UnsafeFieldAccesor}()"
                 : $"sourceItem{(isSourceNullable ? "?." : ".")}{sourceKeyMemberName}";
 
             switch (keyConversionType)
@@ -274,7 +672,7 @@ internal sealed class TypeMap
             }
 
             string sourceValue = useSourceValueFieldUnsafeAccesor
-                ? $"{sourceValueMember.UnsafeFieldAccesor}(sourceItem)"
+                ? $"sourceItem.{sourceValueMember.UnsafeFieldAccesor}()"
                 : $"sourceItem{(!checkedNull && isSourceNullable ? "?." : ".")}{sourceValueMemberName}";
 
 
@@ -301,6 +699,7 @@ internal sealed class TypeMap
 
             code.Append(@"
             target[").Append(keySourceAccess).Append("] = ").Append(sourceValue).Append(";");
+
         }
 
         static void GetMethodBuilder(StringBuilder code, TypeMeta targetType, TypeMeta sourceType, string methodName, List<(int, Action<StringBuilder>)> members)
@@ -415,9 +814,8 @@ internal sealed class TypeMap
             string methodName,
             bool allowSourceNull)
     {
-
         bool isTargetValueType = target.Type.IsValueType,
-            useUpdate = conversionType is ConversionType.Mapper && target is not { Type: { IsCollection: true, Collection.Type: EnumerableType.Dictionary } },
+            useUpdate = conversionType is ConversionType.Mapper && target is not { Type: { IsCollection: true } },
             useUnsafeSetterAccessor = (!target.CanWrite && target.UseUnsafeAccessor) || (useUpdate && target.Type.IsValueType),
             useUnsafeGetterAccessor = target is { CanRead: false, UseUnsafeAccessor: true },
             isSourceValueType = source.Type.IsValueType,
@@ -435,7 +833,7 @@ internal sealed class TypeMap
             sourceMemberExpression = source is { CanRead: false, UseUnsafeAccessor: true }
                 ? $"{source.UnsafeFieldAccesor}(source)"
                 : "source." + source.Name,
-            targetTypeFullName = target.Type.FullName;;
+            targetTypeFullName = target.Type.FullName; ;
 
         short maxDepth = target.MaxDepth;
 
@@ -509,7 +907,7 @@ internal sealed class TypeMap
 
                 if (isSourceNullable) code.Append(@"
         }");
-                if(isTargetNullable || allowSourceNull) code.Append(@"
+                if (isTargetNullable || allowSourceNull) code.Append(@"
         else
         {
             ").Append(useUnsafeSetterAccessor ? targetMemberWriteExpression : cachedTargetMemberExpr).Append(@" = default;
@@ -567,14 +965,14 @@ internal readonly record struct CollectionMeta(
     bool IsItemNullable,
     bool Indexable,
     bool Countable,
-    bool BackingArray,
+    bool ArrayBacked,
     string? Method,
     string CountProp)
 {
     internal readonly bool IsDictionary = Type == EnumerableType.Dictionary;
 };
 
-internal record struct CollectionMapping(
+internal record struct CollectionMappingMeta(
     bool CreateArray,
     bool UseLenInsteadOfIndex,
     string Iterator,

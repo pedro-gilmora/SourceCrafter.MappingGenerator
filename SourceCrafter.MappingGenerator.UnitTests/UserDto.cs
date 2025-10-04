@@ -18,7 +18,7 @@ public partial class UserDto
     public (int id, string name) MainRole { get; set; }
 
     public decimal TotalAmount { get; set; }
-    public Dictionary<string, string> ExtendedProperties { get; set; } = [];
+    public List<(string id, string item)> ExtendedProperties { get; set; } = [];
 
     public UserDto Supervisor { get; init; }
     public IEnumerable<string> Phrases { get; set; } = Array.Empty<string>();
