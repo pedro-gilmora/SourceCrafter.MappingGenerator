@@ -2,6 +2,8 @@
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
+using SourceCrafter.Mappify;
+
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
@@ -399,6 +401,55 @@ namespace SourceCrafter
             }
 
             return result;
+        }
+        internal static bool HasConversion(
+            this Compilation compilation,
+            TypeMeta target,
+            TypeMeta source,
+            ref ConversionType scalarConversion,
+            ref ConversionType reverseScalarConversion)
+                => HasConversion(compilation, source, target, ref scalarConversion)
+                   | HasConversion(compilation, target, source, ref reverseScalarConversion);
+
+        private static bool HasConversion(Compilation compilation, TypeMeta source, TypeMeta target, ref ConversionType info)
+        {
+            //if ((source, target) is not (
+            //    ({ IsTupleType: false }, { IsTupleType: false }) and
+            //    ({ DictionaryOwned: false, IsKeyValueType: false }, { DictionaryOwned: false, IsKeyValueType: false })))
+            //{
+            //    info = default;
+            //    return false;
+            //}
+
+            ITypeSymbol
+                targetTypeSymbol = target.Symbol,
+                sourceTypeSymbol = source.Symbol;
+
+            var conversion = compilation.ClassifyConversion(sourceTypeSymbol, targetTypeSymbol);
+
+            if (conversion.IsExplicit && !target.IsObject)
+                info |= ConversionType.Explicit;
+
+            else if (conversion.IsImplicit)
+                info |= ConversionType.Implicit;
+
+            if (sourceTypeSymbol.InheritsOrImplements(targetTypeSymbol))
+                info |= ConversionType.InheritsOrImplement;
+
+            else if (sourceTypeSymbol
+                    .GetMembers()
+                    .Any(m =>
+                        m is IMethodSymbol
+                        {
+                            MethodKind: MethodKind.Conversion,
+                            Parameters: [{ Type: { } firstParam }],
+                            ReturnType: { } returnType
+                        }
+                        && sourceTypeSymbol.InheritsOrImplements(returnType)
+                        && SymbolEqualityComparer.Default.Equals(firstParam, targetTypeSymbol)))
+                info |= ConversionType.ConversionMethod;
+
+            return conversion.Exists || info is not ConversionType.None;
         }
 
         internal static bool TryGetFirst<T>(this IEnumerable<T> items, Func<T, bool> predicate, out T itemOut)

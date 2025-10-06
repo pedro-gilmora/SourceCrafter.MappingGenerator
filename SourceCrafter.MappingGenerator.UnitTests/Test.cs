@@ -1,13 +1,15 @@
 ﻿//Testing utils
-using Xunit;
-
-// Analyzer 
-using SourceCrafter.Mappify;
-
 //Testing purpose
 using FluentAssertions;
+
 using Microsoft.CodeAnalysis.CSharp;
+// Analyzer 
+using SourceCrafter.Mappify;
 using SourceCrafter.UnitTests;
+
+using System.Runtime.CompilerServices;
+
+using Xunit;
 
 namespace SourceCrafter.Bindings.UnitTests
 {
@@ -212,16 +214,14 @@ namespace SourceCrafter.Bindings.UnitTests
         //}
     }
 }
-//namespace SourceCrafter.Mappify
-//{
-//    public static partial class Mappings
-//    {
-//        extension(User item)
-//        {
-//            public User? Supervisor
-//            {
-//                set => item.GetUserSupervisor() = value;
-//            }
-//        }
-//    }
-//}
+namespace SourceCrafter.Mappify
+{
+    public static partial class Mappings
+    {
+        static void Test()
+        {
+            //-Unsafe.As<IEmail, Email>(ref target.GetMainEmail())
+
+        }
+    }
+}

@@ -14,7 +14,16 @@ namespace SourceCrafter.Mappify;
 
 internal delegate bool CacheCreator(string item, out string cachedItem);
 internal delegate void MapperMethodCreator(StringBuilder code, Action<StringBuilder> itemMapper);
-enum ConversionType { None, Cast, Mapper }
+[Flags]
+enum ConversionType
+{
+    None = 0,
+    Implicit = 1,
+    InheritsOrImplement = 2,
+    Explicit = 4,
+    Mapper = 8,
+    ConversionMethod = 16
+}
 internal sealed class TypeMap
 {
     internal readonly int Id, TargetTypeId, SourceTypeId;
@@ -25,9 +34,9 @@ internal sealed class TypeMap
 
     internal readonly string MethodName, ReverseMethodName;
 
+#if DEBUG || DEBUGSGEN
     private readonly string debugString;
-
-    private readonly bool _rendered;
+#endif
 
     public TypeMap(
         int mapperId,
@@ -68,20 +77,24 @@ internal sealed class TypeMap
 
         if (/*_isCollection = */sourceType.IsCollection && targetType.IsCollection)
         {
-            if (IsCollectionMapping()) _conversionType = _reverseConversionType = ConversionType.Mapper;
+            if (IsCollectionMapping())
+            {
+                _conversionType |= ConversionType.Mapper;
+                _reverseConversionType |= ConversionType.Mapper;
+            }
 
             else IsValid = false;
 
             return;
         }
 
-        IsValid = targetType.HasConversion(types.Compilation, sourceType, out _conversionType, out _reverseConversionType);
+        IsValid = types.Compilation.HasConversion(targetType, sourceType, ref _conversionType, ref _reverseConversionType);
 
         if (targetType.IsPrimitive || sourceType.IsPrimitive || sourceType.IsMemberless || targetType.IsMemberless) return;
 
-        if (!targetType.IsInterface) _conversionType = ConversionType.Mapper;
+        if (!targetType.IsInterface) _conversionType |= ConversionType.Mapper;
 
-        if (!sourceType.IsInterface) _reverseConversionType = ConversionType.Mapper;
+        if (!sourceType.IsInterface) _reverseConversionType |= ConversionType.Mapper;
 
         List<(int, Action<StringBuilder>)> members = [], reverseMembers = [];
 
@@ -356,7 +369,7 @@ internal sealed class TypeMap
         {
             bool isTargetNullable = targetType.Collection.IsItemNullable,
                 isSourceNullable = sourceType.Collection.IsItemNullable;
-                    
+
             TypeMeta targetItem = targetMeta.ItemType,
                      sourceItem = sourceMeta.ItemType;
 
@@ -497,7 +510,7 @@ internal sealed class TypeMap
 
                 switch (conversionType)
                 {
-                    case ConversionType.Cast:
+                    case ConversionType.Explicit:
                         code.Append(Cast(targetItemFullTypeName, sourceMemberExpression, isSourceNullable));
                         break;
                     case ConversionType.Mapper:
@@ -547,7 +560,7 @@ internal sealed class TypeMap
 
                     switch (conversionType)
                     {
-                        case ConversionType.Cast:
+                        case ConversionType.Explicit:
                             code.Append(Cast(targetItemFullTypeName, sourceMemberExpression, isSourceNullable));
                             break;
                         case ConversionType.Mapper:
@@ -600,7 +613,7 @@ internal sealed class TypeMap
 
                     switch (conversionType)
                     {
-                        case ConversionType.Cast:
+                        case ConversionType.Explicit:
                             code.Append(Cast(targetItemFullTypeName, sourceMemberExpression, isSourceNullable));
                             break;
                         case ConversionType.Mapper:
@@ -653,7 +666,7 @@ internal sealed class TypeMap
 
             switch (keyConversionType)
             {
-                case ConversionType.Cast:
+                case ConversionType.Explicit:
                     keySourceAccess = Cast(targetValueTypeName, keySourceAccess, isSourceKeyNullable);
                     break;
                 case ConversionType.Mapper:
@@ -678,7 +691,7 @@ internal sealed class TypeMap
 
             switch (valueConversionType)
             {
-                case ConversionType.Cast:
+                case ConversionType.Explicit:
                     sourceValue = Cast(targetValueTypeName, sourceValue, isSourceValueNullable);
                     break;
                 case ConversionType.Mapper:
@@ -815,7 +828,7 @@ internal sealed class TypeMap
             bool allowSourceNull)
     {
         bool isTargetValueType = target.Type.IsValueType,
-            useUpdate = conversionType is ConversionType.Mapper && target is not { Type: { IsCollection: true } },
+            useUpdate = conversionType.HasFlag(ConversionType.Mapper) && target is not { Type: { IsCollection: true } },
             useUnsafeSetterAccessor = (!target.CanWrite && target.UseUnsafeAccessor) || (useUpdate && target.Type.IsValueType),
             useUnsafeGetterAccessor = target is { CanRead: false, UseUnsafeAccessor: true },
             isSourceValueType = source.Type.IsValueType,
@@ -833,13 +846,13 @@ internal sealed class TypeMap
             sourceMemberExpression = source is { CanRead: false, UseUnsafeAccessor: true }
                 ? $"{source.UnsafeFieldAccesor}(source)"
                 : "source." + source.Name,
-            targetTypeFullName = target.Type.FullName; ;
+            targetTypeFullName = target.Type.FullName,
+            sourceTypeFullName = source.Type.FullName;
 
         short maxDepth = target.MaxDepth;
 
         return code =>
         {
-
             if (useUpdate)
             {
                 if (isSourceNullable || isTargetNullable)
@@ -857,7 +870,13 @@ internal sealed class TypeMap
                 if (isSourceNullable)
                 {
                     lastWasNullCheck = true;
-                    code.Append("if(").Append(cachedSourceMemberExpr).Append(" is {} _source").Append(source.Name).Append(@")
+
+                    code.Append("if(").Append(cachedSourceMemberExpr).Append(" is ")
+                        .Append(source.Type.IsInterface && (conversionType.HasFlag(ConversionType.Explicit) || conversionType.HasFlag(ConversionType.InheritsOrImplement))
+                            ? targetTypeFullName
+                            : sourceTypeFullName)
+                        .Append(" _source")
+                        .Append(source.Name).Append(@")
         {
             ");
 
@@ -891,11 +910,11 @@ internal sealed class TypeMap
 
                     switch (conversionType)
                     {
-                        case ConversionType.Cast:
-                            code.Append(Cast(targetTypeFullName, cachedSourceMemberExpr, false));
-                            break;
-                        case ConversionType.Mapper:
+                        case ConversionType.Mapper and not ConversionType.Implicit:
                             code.Append(UseMapper(methodName, cachedSourceMemberExpr, false));
+                            break;
+                        case ConversionType.Explicit:
+                            code.Append(Cast(targetTypeFullName, cachedSourceMemberExpr, false));
                             break;
                         default:
                             code.Append(cachedSourceMemberExpr);
@@ -928,7 +947,7 @@ internal sealed class TypeMap
 
                 switch (conversionType)
                 {
-                    case ConversionType.Cast:
+                    case ConversionType.Explicit and not ConversionType.Implicit:
                         code.Append(Cast(targetTypeFullName, sourceMemberExpression, isSourceNullable));
                         break;
                     case ConversionType.Mapper:

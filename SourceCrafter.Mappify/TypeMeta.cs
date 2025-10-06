@@ -90,11 +90,11 @@ internal sealed class TypeMeta
         (SanitizedName, ExportFullName) = implementation is null
             ? (types.SanitizeName(Symbol), ExportFullName = Symbol.FullyQualifiedName)
             : (types.SanitizeName(type), ExportFullName = FullName);
+        
+        Members = Set<MemberMeta>.Create(m => m.HashCode);
 
         if (!(IsCollection = IsEnumerableType(types, FullNonGenericName, type, out Collection, out IsRecursive, ref HasRefTypeMembers)))
         {
-            Members = Set<MemberMeta>.Create(m => m.HashCode);
-
             if (IsPrimitive) return;
 
             if (IsTupleType)
@@ -396,50 +396,7 @@ internal sealed class TypeMeta
                 .AppendLine(" _);");
         }));
     }
-    internal bool HasConversion(
-        Compilation compilation,
-        TypeMeta source,
-        out ConversionType scalarConversion,
-        out ConversionType reverseScalarConversion)
-            => HasConversion(compilation, source, this, out scalarConversion)
-               | HasConversion(compilation, this, source, out reverseScalarConversion);
-
-    private bool HasConversion(Compilation compilation, TypeMeta source, TypeMeta target, out ConversionType info)
-    {
-        //if ((source, target) is not (
-        //    ({ IsTupleType: false }, { IsTupleType: false }) and
-        //    ({ DictionaryOwned: false, IsKeyValueType: false }, { DictionaryOwned: false, IsKeyValueType: false })))
-        //{
-        //    info = default;
-        //    return false;
-        //}
-
-        ITypeSymbol
-            targetTypeSymbol = target.Symbol,
-            sourceTypeSymbol = source.Symbol;
-
-        var conversion = compilation.ClassifyConversion(sourceTypeSymbol, targetTypeSymbol);
-
-        info = conversion switch
-        {
-            { IsExplicit: true } when !target.IsObject || !sourceTypeSymbol.InheritsOrImplements(targetTypeSymbol) || sourceTypeSymbol
-                .GetMembers()
-                .Any(m =>
-                    m is IMethodSymbol
-                    {
-                        MethodKind: MethodKind.Conversion,
-                        Parameters: [{ Type: { } firstParam }],
-                        ReturnType: { } returnType
-                    }
-                    && sourceTypeSymbol.InheritsOrImplements(returnType)
-                    && SymbolEqualityComparer.Default.Equals(firstParam, targetTypeSymbol)) => ConversionType.Cast,
-            _ => ConversionType.None,
-        };
-
-        return conversion.Exists || info is not ConversionType.None;
-
-
-    }
+    
 
     private bool IsExcludedByMetadata(Compilation compilation, ImmutableArray<AttributeData> attributes, out HashSet<int> ignoreFor, out Dictionary<int, bool?> manualMatches, out short maxDepth)
     {
