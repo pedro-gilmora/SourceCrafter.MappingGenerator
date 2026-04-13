@@ -350,6 +350,9 @@ ASALocalRun/
 # Local History for Visual Studio
 .localhistory/
 
+# Source generator output
+GeneratedFiles/
+
 # BeatPulse healthcheck temp database
 healthchecksdb
 

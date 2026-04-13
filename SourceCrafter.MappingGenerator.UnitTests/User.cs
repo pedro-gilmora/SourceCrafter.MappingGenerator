@@ -38,7 +38,7 @@ public partial class User : IUserPerson2, IContactableUser //: IUser
 
     //[IgnoreFor(nameof(UserDto.Supervisor))]
     public User? Supervisor { get; init; }
-    public Dictionary<object, string> ExtendedProperties { get; init; } = [];
+    public Dictionary<object, string>? ExtendedProperties { get; init; }
     public string[] Phrases { get; set; } = [];
     public Status Status { get; }
     public IEmail? MainEmail { get; set; }

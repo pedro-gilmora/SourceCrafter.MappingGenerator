@@ -52,7 +52,7 @@ jobs:
           fi
 
       - name: Pack
-        if: github.ref_name == 'dev'
+        if: startsWith(github.event.head_commit.message, '[Release]')
         run: |
           created_year=$( date -d @${{ github.event.repository.created_at }} +%Y )
           version=""$(( $(date --date='now' +%Y) - $created_year )).$(date +%y).$(date +%j).$(( $(date +%H%M) / 5 ))""
@@ -67,7 +67,7 @@ jobs:
 
       - name: Publish to Nuget
         id: publish
-        if: github.ref_name == 'dev' && startsWith(github.event.head_commit.message, '[Release]')
+        if: startsWith(github.event.head_commit.message, '[Release]')
         run: |
           package="$(find . -wholename '**/Pack/*.nupkg' -exec echo "{}" \;)"
           

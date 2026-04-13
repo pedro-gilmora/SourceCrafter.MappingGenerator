@@ -12,6 +12,7 @@ using System.ComponentModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Threading;
 
 
 
@@ -300,8 +301,8 @@ namespace SourceCrafter
                 : [];
         }
 
-        internal static int ComputeHashCode(this (int , int) typeIdPair) =>
-            (Math.Min(typeIdPair.Item1, typeIdPair.Item2), Math.Max(typeIdPair.Item2, typeIdPair.Item1)).GetHashCode();
+        internal static int ComputeHashCode(this (int aId, int bId) typeIdPair) =>
+            (Math.Min(typeIdPair.aId, typeIdPair.bId), Math.Max(typeIdPair.bId, typeIdPair.aId)).GetHashCode();
 
 
 
@@ -413,14 +414,6 @@ namespace SourceCrafter
 
         private static bool HasConversion(Compilation compilation, TypeMeta source, TypeMeta target, ref ConversionType info)
         {
-            //if ((source, target) is not (
-            //    ({ IsTupleType: false }, { IsTupleType: false }) and
-            //    ({ DictionaryOwned: false, IsKeyValueType: false }, { DictionaryOwned: false, IsKeyValueType: false })))
-            //{
-            //    info = default;
-            //    return false;
-            //}
-
             ITypeSymbol
                 targetTypeSymbol = target.Symbol,
                 sourceTypeSymbol = source.Symbol;
@@ -468,10 +461,6 @@ namespace SourceCrafter
         public static bool IsAccessible(this ISymbol symbol, IModuleSymbol module) =>
             symbol.DeclaredAccessibility is Accessibility.Public or Accessibility.Internal
             || SymbolEqualityComparer.Default.Equals(symbol.ContainingModule, module);
-
-
-        internal static T Exchange<T>(ref this T oldVal, T newVal) where T : struct =>
-                    oldVal.Equals(newVal) ? oldVal : ((oldVal, _) = (newVal, oldVal)).Item2;
 
         // Write custom extension methods here. They will be available to all queries.
         public static void Compile(this string code, out CSharpCompilation compilation, out SyntaxNode root, out SemanticModel model, params Type[] assemblies)

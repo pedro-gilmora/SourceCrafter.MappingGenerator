@@ -878,15 +878,7 @@ public static class Mappings{0}
         };
     }
 
-    public override string ToString()
-    {
-        return FullName;
-    }
-
-    public void BuildEnumExtensions()
-    {
-    }
-
+    public override string ToString() => FullName;
 }
 
 internal class CodeEqualityComparer : IEqualityComparer<CodeRenderer>

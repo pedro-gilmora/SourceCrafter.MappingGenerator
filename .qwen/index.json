@@ -1,0 +1,122 @@
+{
+  "version": "1.0",
+  "projects": {
+    "SourceCrafter.Mappify": {
+      "path": "SourceCrafter.Mappify",
+      "type": "Roslyn Incremental Source Generator",
+      "targetFramework": "netstandard2.0",
+      "namespace": "SourceCrafter.Mappify",
+      "nugetPackage": "SourceCrafter.Mappify",
+      "entryPoint": "SourceCrafter.Mappify/Main.cs",
+      "files": {
+        "Main.cs": "IIncrementalGenerator implementation - scans for MapAttribute, ExtendAttribute",
+        "Mappers.cs": "Orchestration layer - manages TypeSet, TypeMap creation, source emission",
+        "TypeMap.cs": "Core mapping logic (1250 lines) - member matching, collections, scalar conversions, recursive types",
+        "TypeMeta.cs": "Type metadata - extracts members, detects collections, builds UnsafeAccessor code",
+        "TypeSet.cs": "Type cache/registry - deduplication, method name sanitization",
+        "MemberMeta.cs": "Member representation - property/field with Matches() method, nullability",
+        "MapAttribute.cs": "All attributes: MapAttribute, IgnoreAttribute, IgnoreForAttribute, MaxAttribute, ExtendAttribute, IImplement",
+        "Constants.cs": "Enums: ApplyTo, EnumerableType, MappingKind (Normal=1, Fill=2, All=3)",
+        "Helpers.cs": "Utilities: string manipulation, type helpers (IsPrimitive, IsNullable, InheritsOrImplements), hash computation",
+        "Helpers/Map.cs": "Custom hash table<TKey, TValue> - optimized, no LINQ",
+        "Helpers/Set.cs": "Custom hash set<TKey, TValue> - optimized, no LINQ"
+      }
+    },
+    "SourceCrafter.MappingGenerator": {
+      "path": "SourceCrafter.MappingGenerator",
+      "csprojName": "SourceCrafter.Bindings.csproj",
+      "type": "Roslyn Incremental Source Generator (alternate)",
+      "targetFramework": "netstandard2.0",
+      "namespace": "SourceCrafter.Bindings",
+      "entryPoint": "SourceCrafter.MappingGenerator/Generator.cs",
+      "inSolution": false,
+      "files": {
+        "Generator.cs": "IIncrementalGenerator - scans for BindAttribute, ExtendAttribute",
+        "BindAttribute.cs": "Attributes: BindAttribute, IgnoreBindAttribute, MaxAttribute, ExtendAttribute, IImplement",
+        "Constants.cs": "Enums: ApplyOn, EnumerableType, MappingKind",
+        "TypeMappingEntry.cs": "Core bidirectional mapping definition with method names, collection info",
+        "TypeMetadata.cs": "Type metadata - member extraction, collection info, enum extension generation",
+        "MemberMetadata.cs": "Property/field metadata with max-depth tracking",
+        "Indent.cs": "Code formatting indentation helpers",
+        "AssemblyInfo.cs": "COM visibility, GUID",
+        "MaxDepthAttribute.cs": "MaxAttribute<TIn,TOut> helper",
+        "MappingSet/MappingSet.cs": "Main orchestration - custom hash dictionary for TypeMapping storage",
+        "MappingSet/MappingSet.TypeSet.cs": "TypeSet - type cache with custom hash dictionary",
+        "MappingSet/MappingSet.ParseTypesMap.cs": "Recursive type traversal, scalar conversion detection, KeyValuePair mapping",
+        "MappingSet/MappingSet.CreateTypeBuilder.cs": "Generates ToXxx/Update/Copy/TryGet methods",
+        "MappingSet/MappingSet.MemberHelpers.cs": "BuildMemberMapping - individual member assignment, UnsafeAccessor emission",
+        "MappingSet/MappingSet.CreateCollectionMapBuilders.cs": "Collection copy/update method generation",
+        "MappingSet/MappingSet.ValueHelpers.cs": "GetNullability, GenerateValue - nullability computation and value emission",
+        "MappingSet/MappingSet.CollectionHelpers.cs": "Empty partial placeholder"
+      }
+    },
+    "SourceCrafter.MappingGenerator.UnitTests": {
+      "path": "SourceCrafter.MappingGenerator.UnitTests",
+      "type": "xUnit Test Project",
+      "targetFramework": "net9.0",
+      "testsGenerator": "SourceCrafter.Mappify (via ProjectReference OutputItemType=Analyzer)",
+      "files": {
+        "Test.cs": "Main test - UserDto <-> User roundtrip mapping",
+        "EnumsTest.cs": "Enum extension tests",
+        "FacilCubaTesting.cs": "Additional test fixtures",
+        "User.cs": "Domain model with properties",
+        "UserDto.cs": "DTO with tuple for MainRole, Dictionary for ExtendedProperties",
+        "UserMiniDto.cs": "Simplified DTO",
+        "Role.cs": "Struct for role (Id, Name)",
+        "IUser.cs": "Interface",
+        "WindowsUser.cs": "Test model",
+        "AssemblyInfo.cs": "Assembly attributes"
+      }
+    }
+  },
+  "commands": {
+    "build": "dotnet build SourceCrafter.MappingGenerator.slnx -c Debug",
+    "build-release": "dotnet build SourceCrafter.MappingGenerator.slnx -c Release",
+    "test": "dotnet test SourceCrafter.MappingGenerator.UnitTests/SourceCrafter.MappingGenerator.UnitTests.csproj -c Release",
+    "build-test": "dotnet build SourceCrafter.MappingGenerator.slnx -c Debug && dotnet test SourceCrafter.MappingGenerator.UnitTests/SourceCrafter.MappingGenerator.UnitTests.csproj -c Release --no-build",
+    "pack": "dotnet pack SourceCrafter.Mappify/SourceCrafter.Mappify.csproj -c Pack",
+    "clean": "dotnet clean SourceCrafter.MappingGenerator.slnx"
+  },
+  "configurations": {
+    "Debug": "Normal development",
+    "DebugSGen": "Debug with Debugger.Launch() at generator start",
+    "DEBUG_SG": "Alternate debug config",
+    "Release": "Optimized build",
+    "Pack": "NuGet package creation"
+  },
+  "patterns": {
+    "addingNewMapping": "Add [assembly: Map<Source, Target>] in any .cs file or [Map<Source>] on target class",
+    "customMemberBinding": "Use [Map(nameof(OtherType.MemberName))] on property/field",
+    "ignoreMember": "Use [Ignore] attribute to exclude from all mappings",
+    "ignoreForSpecific": "Use [IgnoreFor(nameof(CounterpartMember))] for selective exclusion",
+    "recursiveType": "Use [Max(depth)] on self-referential members",
+    "enumExtensions": "Use [Extend] on enum or [assembly: Extend<EnumType>]",
+    "interfaceMapping": "Use IImplement<Interface, Implementation> marker type",
+    "unsafeAccessor": "Automatically used on .NET 8+ for readonly fields and init-only properties"
+  },
+  "keyClasses": {
+    "TypeMap": {
+      "file": "SourceCrafter.Mappify/TypeMap.cs",
+      "responsibility": "Core mapping logic - builds mapper methods for objects, collections, dictionaries. Handles recursive types, scalar conversions, collection mapping"
+    },
+    "Mappers": {
+      "file": "SourceCrafter.Mappify/Mappers.cs",
+      "responsibility": "Top-level orchestration - holds TypeSet, manages TypeMap creation, emits generated source files"
+    },
+    "GeneratedMappers": {
+      "file": "SourceCrafter.Mappify/Main.cs",
+      "responsibility": "IIncrementalGenerator entry point - scans for attributes, orchestrates generation"
+    }
+  },
+  "generatedOutput": {
+    "namespace": "SourceCrafter.Mappify.Mappings",
+    "class": "public static partial class Mappings",
+    "methods": {
+      "ToTarget": "TTarget ToTarget(this TSource source) - creates new target populated from source",
+      "Update": "TTarget Update(this TTarget target, TSource source) - updates target in-place, returns target",
+      "Copy": "TSelf Copy(this TSelf source) - deep structural copy of same type",
+      "CollectionMethods": "ToTargetCollection(), Update() for collection types"
+    },
+    "fileNaming": "{Id}_{Type1}_{Type2}.map.g.cs"
+  }
+}

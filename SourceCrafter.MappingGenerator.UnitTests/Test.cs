@@ -7,7 +7,9 @@ using Microsoft.CodeAnalysis.CSharp;
 using SourceCrafter.Mappify;
 using SourceCrafter.UnitTests;
 
+using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Collections.Generic;
 
 using Xunit;
 
@@ -152,12 +154,21 @@ namespace SourceCrafter.Bindings.UnitTests
 
             var fromDto = userDto.ToUser();
             fromDto.Age.Should().Be(32);
+            fromDto.Count.Should().Be(5);
             fromDto.FirstName.Should().Be("Pedro");
             fromDto.LastName.Should().Be("Gil Mora");
             fromDto.DateOfBirth.Should().Be(today);
             fromDto.Balance.Should().Be(45.6);
             fromDto.Count.Should().Be(5);
             fromDto.MainRole.Id.Should().Be(0);
+
+            if (fromDto.ExtendedProperties is not null)
+            {
+                foreach (var item in fromDto.ExtendedProperties)
+                {
+                    userDto.ExtendedProperties.Any(p => item.Key.Equals(p.id) && item.Value.Equals(p.item)).Should().BeTrue();
+                }
+            }
 
             fromDto.MainRole.Name.Should().Be("admin");
 
