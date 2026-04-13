@@ -3,6 +3,7 @@
 public partial class UserDto
 {
     public int Id { get; init; }
+
     public string FullName { get; set; } = null!;
 
     public int Count { get; set; }
@@ -18,14 +19,21 @@ public partial class UserDto
     public (int id, string name) MainRole { get; set; }
 
     public decimal TotalAmount { get; set; }
+
     public List<(string id, string item)> ExtendedProperties { get; set; } = [];
 
     public UserDto? Supervisor { get; init; }
+
     public IEnumerable<string> Phrases { get; set; } = Array.Empty<string>();
+
     public Status Status { get; }
+
     public Email? MainEmail { get; set; }
+
     public Phone? MainPhone { get; set; }
+
     public bool IsAvailable { get; set; }
+
     public Guid GlobalId { get; set; }
 
 }

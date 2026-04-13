@@ -2,7 +2,6 @@
 
 A **Roslyn incremental source generator** for .NET that produces type-mapping extension methods at compile-time — zero runtime overhead, no reflection.
 
-[![NuGet](https://img.shields.io/nuget/v/SourceCrafter.Mappify.svg)](https://www.nuget.org/packages/SourceCrafter.Mappify)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
@@ -481,7 +480,7 @@ public static partial class Mappings
         target.Age      = source.Age;
         target.Balance  = (double)source.TotalAmount;          // decimal → double
         target.GetMainRole().Update(source.MainRole);          // tuple → struct
-        target.GetExtendedProperties()
+        target.ExtendedProperties
               .Update(source.ExtendedProperties);              // List<tuple> → Dictionary
         // ...
         return target;
