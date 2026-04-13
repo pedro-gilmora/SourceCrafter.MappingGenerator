@@ -23,7 +23,6 @@
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 			<PrivateAssets>all</PrivateAssets>
 		</PackageReference>
-		<PackageReference Include="Riok.Mapperly" Version="4.1.1" ExcludeAssets="runtime" PrivateAssets="all" />
 	</ItemGroup>
 	<ItemGroup>
 	  <ProjectReference Include="..\SourceCrafter.Mappify\SourceCrafter.Mappify.csproj" OutputItemType="Analyzer" />

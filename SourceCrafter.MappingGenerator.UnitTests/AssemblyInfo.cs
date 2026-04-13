@@ -1,6 +1,4 @@
-﻿using Riok.Mapperly.Abstractions;
-
-using SourceCrafter.Mappify.Attributes;
+﻿using SourceCrafter.Mappify.Attributes;
 using SourceCrafter.Mappify.UnitTests;
 using SourceCrafter.UnitTests;
 //using SourceCrafter.Mappify;

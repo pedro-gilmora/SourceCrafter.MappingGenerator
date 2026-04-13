@@ -6,7 +6,6 @@ using System.Xml.Linq;
 using FluentAssertions;
 using SourceCrafter.Mvvm.Attributes;
 using SourceCrafter.Mappify.Attributes;
-using Riok.Mapperly.Abstractions;
 using SourceCrafter.UnitTests;
 
 
