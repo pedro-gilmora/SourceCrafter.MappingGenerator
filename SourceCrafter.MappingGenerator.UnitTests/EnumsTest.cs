@@ -22,20 +22,20 @@ public class EnumsTest
         StoppedDesc = "Transaction was stopped",
         StartedDesc = "Transaction has been started",
         CancelledDesc = "Transaction has been cancelled by user",
-        Failure = "Transaction had an external failure";
+        FailureDesc = "Transaction had an external failure";
 
     [Fact]
     public void TestEnums_0()
     {
-        MappingKind.Values.ToArray().Should().BeEquivalentTo([MappingKind.All, MappingKind.Normal, MappingKind.Fill]);
+        MappingKind.Values.Should().BeEquivalentTo([MappingKind.All, MappingKind.Normal, MappingKind.Fill]);
 
-        MappingKind.Names.ToArray().Should().BeEquivalentTo([nameof(MappingKind.All), nameof(MappingKind.Normal), nameof(MappingKind.Fill)]);
+        MappingKind.Names.Should().BeEquivalentTo([nameof(MappingKind.All), nameof(MappingKind.Normal), nameof(MappingKind.Fill)]);
 
         MappingKind.Fill.Name.Should().Be(nameof(MappingKind.Fill));
 
         MappingKind.TryGetValue(nameof(MappingKind.Fill), out var kind).Should().BeTrue();
 
-        MappingKind.Fill.Should().Be(kind);
+        kind.Should().Be(MappingKind.Fill);
 
         MappingKind.TryGetValue("Unknown", out _).Should().BeFalse();
 
@@ -59,20 +59,21 @@ public class EnumsTest
 
         ((MappingKind)6).TryGetDescription(out _).Should().BeFalse();
     }
+
     [Fact]
     public void TestEnums_1()
     {
-        Status.Values.ToArray().Should().BeEquivalentTo([Status.NotStarted, Status.Stopped, Status.Started, Status.Cancelled, Status.Failed]);
+        Status.Values.Should().BeEquivalentTo([Status.NotStarted, Status.Stopped, Status.Started, Status.Cancelled, Status.Failed]);
 
-        Status.Descriptions.ToArray().Should().BeEquivalentTo([NotStartedDesc, StoppedDesc, StartedDesc, CancelledDesc, Failure]);
+        Status.Descriptions.Should().BeEquivalentTo([NotStartedDesc, StoppedDesc, StartedDesc, CancelledDesc, FailureDesc]);
 
-        Status.Names.ToArray().Should().BeEquivalentTo([nameof(Status.NotStarted), nameof(Status.Stopped), nameof(Status.Started), nameof(Status.Cancelled), nameof(Status.Failed)]);
+        Status.Names.Should().BeEquivalentTo([nameof(Status.NotStarted), nameof(Status.Stopped), nameof(Status.Started), nameof(Status.Cancelled), nameof(Status.Failed)]);
 
         Status.Started.Name.Should().Be(nameof(Status.Started));
 
         Status.TryGetValue(nameof(Status.Cancelled), out var status).Should().BeTrue();
 
-        Status.Cancelled.Should().Be(status);
+        status.Should().Be(Status.Cancelled);
 
         Status.TryGetValue("Unknown", out _).Should().BeFalse();
 

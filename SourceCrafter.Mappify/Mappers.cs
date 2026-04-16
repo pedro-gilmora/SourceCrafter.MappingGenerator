@@ -21,13 +21,13 @@ internal sealed partial class Mappers(Compilation compilation, bool canUseUnsafe
 
     internal readonly HashSet<int> _rendered = [];
 
-    internal TypeMap GetOrAdd(TypeMeta targetType, TypeMeta sourceType, ApplyTo ignore = ApplyTo.None)
+    internal TypeMap GetOrAdd(TypeMeta targetType, TypeMeta sourceType, ApplyTo ignore = ApplyTo.None, bool generate = true)
     {
-        var mapperId = (targetType.Id, sourceType.Id).ComputeHashCode();
+        var mapperId = (targetType.Id, sourceType.Id).GetId();
 
         ref var typeMap = ref GetValueRefOrAddDefault(mapperId, out var exists);
 
-        if (exists) return typeMap!;
+        if (exists && typeMap != null) return typeMap;
 
         List<Action<StringBuilder>> methods = [];
 
@@ -39,7 +39,10 @@ internal sealed partial class Mappers(Compilation compilation, bool canUseUnsafe
 
         new TypeMap(mapperId, ref typeMap, targetType, sourceType, ignore, this, Types, methods);
 
-        if(methods.Count > 0) BuildCode();
+        if (generate && methods.Count > 0)
+        {
+            BuildCode();
+        }
 
         return typeMap!;
 
@@ -61,10 +64,8 @@ public static partial class Mappings
 {");
 
             methods.ForEach(m => m(code));
-
-            addSource(
-                $"{_count++.ToString().PadLeft(3, '0')}_{sourceType.SanitizedName}_{targetType.SanitizedName}.map.g",
-                code.Append("}").ToString());
+            
+            addSource($"{_count++.ToString().PadLeft(3, '0')}_{sourceType.SanitizedName}_{targetType.SanitizedName}.map.g", code.Append("}").ToString());
         }
     }
 
@@ -76,6 +77,7 @@ public static partial class Mappings
 
 public static partial class Mappings
 {");
+
         var len = code.Length;
 
         foreach (var item in Types.UnsafeAccessors)
@@ -85,6 +87,6 @@ public static partial class Mappings
 
         if (len == code.Length) return;
 
-        addSource("MappingExtras", code.Append("}").ToString());
+        addSource("MappingExtras.g", code.Append("}").ToString());
     }
 }

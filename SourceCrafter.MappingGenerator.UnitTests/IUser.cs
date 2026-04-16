@@ -32,7 +32,7 @@ public interface IUserPerson
 
 [Extend]
 [Flags]
-public enum Status
+public enum Status : byte
 {
     NotStarted,
     [Description("Transaction was stopped")]

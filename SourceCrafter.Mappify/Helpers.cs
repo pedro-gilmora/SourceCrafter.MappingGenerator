@@ -57,6 +57,8 @@ namespace SourceCrafter
                 genericsOptions: SymbolDisplayGenericsOptions.IncludeTypeParameters | SymbolDisplayGenericsOptions.IncludeVariance,
                 miscellaneousOptions: SymbolDisplayMiscellaneousOptions.UseSpecialTypes | SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier);
 
+        internal static int GetId(this (int targetId, int sourceId) e) => (Math.Min(e.targetId, e.sourceId), Math.Max(e.targetId, e.sourceId)).GetHashCode();
+
         static IEnumerable<(IParameterSymbol, AttributeArgumentSyntax?)> GetAttrParamsMap(
             ImmutableArray<IParameterSymbol> paramSymbols,
             SeparatedSyntaxList<AttributeArgumentSyntax> argsSyntax)

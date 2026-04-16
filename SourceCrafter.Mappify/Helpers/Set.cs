@@ -348,29 +348,40 @@ public class Set<TKey, TValue>(
 
         var hashCode = getHashCode(key);
         int i = GetBucket((uint)hashCode);
-        var entries = _entries;
-        uint collisionCount = 0;
+        var entries = _entries!;
         i--; // Value in _buckets is 1-based; subtract 1 from i. We do it here so it fuses with the following conditional.
-        do
-        {
-            // Test in if to drop range check for following array access
-            if ((uint)i >= (uint)entries!.Length)
-            {
-                val = default!;
-                return false;
-            }
 
-            ref var entry = ref entries[i];
-            if (entry.id == hashCode && equals(entry.Key, key))
+
+        while ((uint)i < (uint)entries.Length)
+        {
+            if (entries[i].id == hashCode && equals(key, entries[i].Key))
             {
-                val = entry.Value;
+                val = entries[i].Value;
                 return true;
             }
 
-            i = entry.next;
+            i = entries[i].next;
+        }
+        //do
+        //{
+        //    // Test in if to drop range check for following array access
+        //    if ((uint)i >= (uint)entries!.Length)
+        //    {
+        //        val = default!;
+        //        return false;
+        //    }
 
-            collisionCount++;
-        } while (collisionCount <= (uint)entries.Length);
+        //    ref var entry = ref entries[i];
+        //    if (entry.id == hashCode && equals(entry.Key, key))
+        //    {
+        //        val = entry.Value;
+        //        return true;
+        //    }
+
+        //    i = entry.next;
+
+        //    collisionCount++;
+        //} while (collisionCount <= (uint)entries.Length);
 
         // The chain of entries forms a loop; which means a concurrent update has happened.
         // Break out of the loop and throw, rather than looping forever.

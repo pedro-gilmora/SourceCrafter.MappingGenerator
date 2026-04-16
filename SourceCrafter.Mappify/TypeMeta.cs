@@ -504,7 +504,7 @@ internal sealed class TypeMeta
         {
             case "global::System.Collections.Generic.Dictionary" or "global::System.Collections.Generic.IDictionary"
             :
-                info = GetCollectionInfo(types, EnumerableType.Dictionary, GetEnumerableType(type, true));
+                info = GetCollectionInfo(types, CollectionKind.Dictionary, GetEnumerableType(type, true));
 
                 if (!hasRefTypeMembers && !info.ItemType.IsValueType) hasRefTypeMembers = true;
 
@@ -514,7 +514,7 @@ internal sealed class TypeMeta
 
             case "global::System.Collections.Generic.Stack"
             :
-                info = GetCollectionInfo(types, EnumerableType.Stack, GetEnumerableType(type));
+                info = GetCollectionInfo(types, CollectionKind.Stack, GetEnumerableType(type));
 
                 if (!isRecursive && (Id == info.ItemType.Id || info.ItemType.IsRecursive)) isRecursive = true;
 
@@ -522,7 +522,7 @@ internal sealed class TypeMeta
 
             case "global::System.Collections.Generic.Queue"
             :
-                info = GetCollectionInfo(types, EnumerableType.Queue, GetEnumerableType(type));
+                info = GetCollectionInfo(types, CollectionKind.Queue, GetEnumerableType(type));
 
                 if (!isRecursive && (Id == info.ItemType.Id || info.ItemType.IsRecursive)) isRecursive = true;
 
@@ -531,7 +531,7 @@ internal sealed class TypeMeta
             case "global::System.ReadOnlySpan"
             :
 
-                info = GetCollectionInfo(types, EnumerableType.ReadOnlySpan, GetEnumerableType(type));
+                info = GetCollectionInfo(types, CollectionKind.ReadOnlySpan, GetEnumerableType(type));
 
                 if (!isRecursive && (Id == info.ItemType.Id || info.ItemType.IsRecursive)) isRecursive = true;
 
@@ -539,7 +539,7 @@ internal sealed class TypeMeta
 
             case "global::System.Span"
             :
-                info = GetCollectionInfo(types, EnumerableType.Span, GetEnumerableType(type));
+                info = GetCollectionInfo(types, CollectionKind.Span, GetEnumerableType(type));
 
                 return true;
 
@@ -547,7 +547,7 @@ internal sealed class TypeMeta
                 "global::System.Collections.Generic.IList" or
                 "global::System.Collections.Generic.List"
             :
-                info = GetCollectionInfo(types, EnumerableType.Collection, GetEnumerableType(type));
+                info = GetCollectionInfo(types, CollectionKind.Collection, GetEnumerableType(type));
 
                 if (!isRecursive && (Id == info.ItemType.Id || info.ItemType.IsRecursive)) isRecursive = true;
 
@@ -558,7 +558,7 @@ internal sealed class TypeMeta
                 "global::System.Collections.Generic.IReadOnlyCollection" or
                 "global::System.Collections.Generic.ReadOnlyCollection"
             :
-                info = GetCollectionInfo(types, EnumerableType.ReadOnlyCollection, GetEnumerableType(type));
+                info = GetCollectionInfo(types, CollectionKind.ReadOnlyCollection, GetEnumerableType(type));
 
                 if (!isRecursive && (Id == info.ItemType.Id || info.ItemType.IsRecursive)) isRecursive = true;
 
@@ -566,7 +566,7 @@ internal sealed class TypeMeta
 
             case "global::System.Collections.Generic.IEnumerable"
             :
-                info = GetCollectionInfo(types, EnumerableType.Enumerable, GetEnumerableType(type));
+                info = GetCollectionInfo(types, CollectionKind.Enumerable, GetEnumerableType(type));
 
                 if (!isRecursive && (Id == info.ItemType.Id || info.ItemType.IsRecursive)) isRecursive = true;
 
@@ -575,7 +575,7 @@ internal sealed class TypeMeta
             default:
                 if (type is IArrayTypeSymbol { ElementType: { } elType })
                 {
-                    info = GetCollectionInfo(types, EnumerableType.Array, elType);
+                    info = GetCollectionInfo(types, CollectionKind.Array, elType);
 
                     return true;
                 }
@@ -594,8 +594,11 @@ internal sealed class TypeMeta
     {
         if (Symbol.GetMembers() is { Length: 0 } members) return;
 
-        string?
+        var enumBaseType = (Symbol is INamedTypeSymbol { EnumUnderlyingType: { } _enumBaseType }) ? _enumBaseType.FullyQualifiedName : "int" ;
+
+        string ?
             collectionsComma = null,
+            collectionsComma1 = null,
             caseComma = null,
             values = null,
             descriptions = null,
@@ -612,13 +615,13 @@ internal sealed class TypeMeta
         {
             string fullMemberName = MemberFullName(m);
 
-            values += collectionsComma + fullMemberName;
+            values += collectionsComma1 + fullMemberName;
 
             string descriptionStr = GetEnumDescription(m);
 
-            descriptions += collectionsComma + descriptionStr;
+            descriptions += collectionsComma1 + descriptionStr;
 
-            names += collectionsComma + "nameof(" + fullMemberName + ")";
+            names += collectionsComma1 + "nameof(" + fullMemberName + ")";
 
             name += caseComma + "            case " + fullMemberName + ": return nameof(" + fullMemberName + ");";
 
@@ -643,27 +646,20 @@ internal sealed class TypeMeta
                     result = " + descriptionStr + @"; 
                     return true;";
 
-            collectionsComma ??= "," + (caseComma ??= @"
-        ");
+            collectionsComma1 ??= (collectionsComma ??= "," + (caseComma ??= @"
+        ") + "    ");
         }
 
         var code = new StringBuilder().AppendFormat(@"#nullable enable
 namespace SourceCrafter.Mappify;
 
 public static class Mappings{0}
-{{
-    
-    private static {1}[] {2}Values => field ??= [
-        {3}
-    ];
+{{    
+    private static {1}[]? _values;
 
-    private static string[] {2}Descriptions => field ??= [
-        {4}
-    ];
+    private static string[]? _descriptions;
 
-    private static string[] {2}Names => field ??= [
-        {5}
-    ];
+    private static string[]? _names;
 
     extension({1} target)
     {{
@@ -690,12 +686,18 @@ public static class Mappings{0}
                 }}
             }}
         }}
+    
+        public static {1}[] Values => _values ??= [
+            {3}
+        ];
 
-        public static global::System.ReadOnlySpan<string> Names => {2}Names;
+        public static string[] Descriptions => _descriptions ??= [
+            {4}
+        ];
 
-        public static global::System.ReadOnlySpan<{1}> Values => {2}Values;
-
-        public static global::System.ReadOnlySpan<string> Descriptions => {2}Descriptions;
+        public static string[] Names => _names ??= [
+            {5}
+        ];
 
         public static bool IsDefined(string value)
         {{
@@ -708,11 +710,11 @@ public static class Mappings{0}
             }}
         }}
 
-        public static bool IsDefined(int value)
+        public static bool IsDefined({9} value)
         {{
             switch(value)
             {{
-        {9}
+        {10}
                     return true;
                 default: 
                     return false; 
@@ -723,7 +725,7 @@ public static class Mappings{0}
         {{
             switch(value)
             {{
-        {10}
+        {11}
                 default: result = default; return false; 
             }}
         }}
@@ -732,7 +734,7 @@ public static class Mappings{0}
         {{
             switch(target)
             {{
-        {11}
+        {12}
                 default: result = default!; return false; 
             }}
         }}
@@ -741,7 +743,7 @@ public static class Mappings{0}
         {{
             switch(target)
             {{
-        {12}
+        {13}
                 default: result = default!; return false; 
             }}
         }}
@@ -756,10 +758,11 @@ public static class Mappings{0}
                 /* 6 */  name,
                 /* 7 */  description,
                 /* 8 */  definedByName,
-                /* 9 */  definedByInt,
-                /* 10 */ tryGetValue,
-                /* 11 */ tryGetName,
-                /* 12 */ tryGetDesc);
+                /* 9 */  enumBaseType,
+                /* 10 */ definedByInt,
+                /* 11 */ tryGetValue,
+                /* 12 */ tryGetName,
+                /* 13 */ tryGetDesc);
 
         addSource($"{i++.ToString().PadLeft(3, '0')}_{SanitizedName}.enum.g.cs", code.ToString());
 
@@ -786,23 +789,23 @@ public static class Mappings{0}
             .First();
     }
 
-    private CollectionMeta GetCollectionInfo(TypeSet types, EnumerableType enumerableType, ITypeSymbol typeSymbol)
+    private CollectionMeta GetCollectionInfo(TypeSet types, CollectionKind enumerableType, ITypeSymbol typeSymbol)
     {
         var itemDataType = types.GetOrAdd((typeSymbol = typeSymbol.ToNonNullable));
 
         return enumerableType switch
         {
 #pragma warning disable format
-            EnumerableType.Dictionary =>
+            CollectionKind.Dictionary =>
                 new(itemDataType,
                     enumerableType,
                     typeSymbol.IsNullable,
                     true,
-                    false,
+                    true,
                     false,
                     "Add",
                     "Count"),
-            EnumerableType.Queue =>
+            CollectionKind.Queue =>
                 new(itemDataType,
                     enumerableType,
                     typeSymbol.IsNullable,
@@ -811,7 +814,7 @@ public static class Mappings{0}
                     false,
                     "Enqueue",
                     "Count"),
-            EnumerableType.Stack =>
+            CollectionKind.Stack =>
                 new(itemDataType,
                     enumerableType,
                     typeSymbol.IsNullable,
@@ -820,7 +823,7 @@ public static class Mappings{0}
                     false,
                     "Push",
                     "Count"),
-            EnumerableType.Enumerable =>
+            CollectionKind.Enumerable =>
                 new(itemDataType,
                     enumerableType,
                     typeSymbol.IsNullable,
@@ -829,7 +832,7 @@ public static class Mappings{0}
                     true,
                     null,
                     "Length"),
-            EnumerableType.ReadOnlyCollection =>
+            CollectionKind.ReadOnlyCollection =>
                 new(itemDataType,
                     enumerableType,
                     typeSymbol.IsNullable,
@@ -838,7 +841,7 @@ public static class Mappings{0}
                     false,
                     "Add",
                     "Count"),
-            EnumerableType.ReadOnlySpan =>
+            CollectionKind.ReadOnlySpan =>
                 new(itemDataType,
                     enumerableType,
                     typeSymbol.IsNullable,
@@ -847,7 +850,7 @@ public static class Mappings{0}
                     true,
                     null,
                     "Length"),
-            EnumerableType.Collection =>
+            CollectionKind.Collection =>
                 new(itemDataType,
                     enumerableType,
                     typeSymbol.IsNullable,
@@ -856,7 +859,7 @@ public static class Mappings{0}
                     false,
                     "Add",
                     "Count"),
-            EnumerableType.Span =>
+            CollectionKind.Span =>
                 new(itemDataType,
                     enumerableType,
                     typeSymbol.IsNullable,

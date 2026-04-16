@@ -148,11 +148,22 @@ namespace SourceCrafter.Bindings.UnitTests
                 DateOfBirth = today,
                 Count = 5,
                 TotalAmount = 45.6m,
-                MainRole = roles[0],
-                ExtendedProperties = { ( "A", "A" ), ("C", "D" ) }
+                MainRole = roles[1],
+                ExtendedProperties = { ( "A", "A" ), ("C", "D" ) },
+                Supervisor = new UserDto
+                {
+                    FullName = "Haynes, Seanovan",
+                    Age = 64,
+                    DateOfBirth = new(1962),
+                    Count = 3,
+                    TotalAmount = 789,
+                    MainRole = roles[0],
+                    ExtendedProperties = { ("D", "D"), ("W", "F") }
+                }
             };
 
-            var fromDto = userDto.ToUser();
+            var fromDto = userDto.ToUser(2);
+
             fromDto.Age.Should().Be(32);
             fromDto.Count.Should().Be(5);
             fromDto.FirstName.Should().Be("Pedro");
@@ -160,19 +171,19 @@ namespace SourceCrafter.Bindings.UnitTests
             fromDto.DateOfBirth.Should().Be(today);
             fromDto.Balance.Should().Be(45.6);
             fromDto.Count.Should().Be(5);
-            fromDto.MainRole.Id.Should().Be(0);
+            fromDto.MainRole.Id.Should().Be(1);
 
             if (fromDto.ExtendedProperties is not null)
             {
                 foreach (var item in fromDto.ExtendedProperties)
                 {
-                    userDto.ExtendedProperties.Any(p => item.Key.Equals(p.id) && item.Value.Equals(p.item)).Should().BeTrue();
+                    userDto.ExtendedProperties.Contains(((string)item.Key, item.Value)).Should().BeTrue();
                 }
             }
 
-            fromDto.MainRole.Name.Should().Be("admin");
+            fromDto.MainRole.Name.Should().Be("publisher");
 
-            var userCopy = fromDto.Copy();
+            var userCopy = fromDto.Copy(2);
 
             userCopy.Age.Should().Be(32);
             userCopy.FirstName.Should().Be("Pedro");
@@ -180,28 +191,28 @@ namespace SourceCrafter.Bindings.UnitTests
             userCopy.DateOfBirth.Should().Be(today);
             userCopy.Balance.Should().Be(45.6);
             userCopy.Count.Should().Be(5);
-            userCopy.MainRole.Id.Should().Be(0);
-            userCopy.MainRole.Name.Should().Be("admin");
+            userCopy.MainRole.Id.Should().Be(1);
+            userCopy.MainRole.Name.Should().Be("publisher");
 
             userCopy.Count = 20;
 
             userCopy.MainRole = userCopy.MainRole with
             {
-                Name = "supervisor"
+                Name = "editor"
             };
 
-            fromDto.Update(userCopy);
+            fromDto.Update(userCopy, 2);
 
             fromDto.Count.Should().Be(20);
 
-            var fromModel = userCopy.ToUserDto();
+            var fromModel = userCopy.ToUserDto(maxDepth: 2);
             fromModel.Age.Should().Be(32);
             fromModel.FullName.Should().Be("Gil Mora, Pedro");
             fromModel.DateOfBirth.Should().Be(today);
             fromModel.TotalAmount.Should().Be(45.6m);
             fromModel.Count.Should().Be(20);
-            fromModel.MainRole.id.Should().Be(0);
-            fromModel.MainRole.name.Should().Be("supervisor");
+            fromModel.MainRole.id.Should().Be(1);
+            fromModel.MainRole.name.Should().Be("editor");
         }
 
         //private static void GetRootAndModel(string code, out CSharpCompilation compilation, out SyntaxNode root, out SemanticModel model, params Type[] assemblies)

@@ -1,4 +1,6 @@
-﻿namespace SourceCrafter.UnitTests;
+﻿using SourceCrafter.Mappify.Attributes;
+
+namespace SourceCrafter.UnitTests;
 
 public partial class UserDto
 {
@@ -20,8 +22,10 @@ public partial class UserDto
 
     public decimal TotalAmount { get; set; }
 
+    public List<UserDto> Subordinated { get; init; } = [];
     public List<(string id, string item)> ExtendedProperties { get; set; } = [];
 
+    [Max(2)]
     public UserDto? Supervisor { get; init; }
 
     public IEnumerable<string> Phrases { get; set; } = Array.Empty<string>();
