@@ -1,7 +1,12 @@
 global using RenderFlags = (bool defaultMethod, bool fillMethod, bool tryGetMethod, bool tryFill);
 global using ScalarConversion = (bool exists, bool isExplicit);
 
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+
+// The harness drives the generator's internal entry point directly so its output can be diffed
+// against the checked-in baseline without spinning up a full compilation.
+[assembly: InternalsVisibleTo("NewGenerator")]
 
 // In SDK-style projects such as this one, several assembly attributes that were historically
 // defined in this file are now automatically added during build and populated with
