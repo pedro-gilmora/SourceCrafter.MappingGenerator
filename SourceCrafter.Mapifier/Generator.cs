@@ -1,184 +1,136 @@
-﻿using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis;
-using System.Collections.Immutable;
-using System.Runtime.CompilerServices;
-using System;
-using System.Linq;
-using System.Text;
-using System.Diagnostics;
-using System.Collections.Generic;
-using SourceCrafter.Bindings;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+
 using SourceCrafter.Mapifier.Constants;
 
-[assembly: InternalsVisibleTo("SourceCrafter.Mapifier.UnitTests")]
+using System;
+using System.Collections.Immutable;
+using System.Diagnostics;
+using System.Linq;
+using System.Threading;
+
 namespace SourceCrafter.Mapifier;
 
+/// <summary>
+/// Pipeline wiring only: it collects the mapping attributes as pure, value-equatable data and
+/// hands them off. Parsing lives in <see cref="MappingParser"/> and rendering in
+/// <see cref="Emitter"/>.
+/// </summary>
 [Generator]
-public class Generator : IIncrementalGenerator
+public sealed class Generator : IIncrementalGenerator
 {
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
+#if DEBUG_SG
+        Debugger.Launch();
+#endif
+        // Every provider below projects straight to pure, value-equatable data. Nothing that can
+        // root a Compilation (symbols, syntax nodes, AttributeData) is allowed past this point.
+        var enums = FindMapperAttributes(
+                context,
+                "SourceCrafter.Mapifier.Attributes.ExtendAttribute`1",
+                static _ => true,
+                static (_, attr) => TypeRef.From(attr.AttributeClass?.TypeArguments is [{ } arg] ? arg : null))
+            .Concat(FindMapperAttributes(
+                context,
+                "SourceCrafter.Mapifier.Attributes.ExtendAttribute",
+                static n => n is EnumDeclarationSyntax,
+                static (target, _) => TypeRef.From(target as ITypeSymbol)))
+            .WithTrackingName("EnumRefs");
+
+        var classLevel = FindMapperAttributes(
+                context,
+                "SourceCrafter.Mapifier.Attributes.BindAttribute`1",
+                static n => n is ClassDeclarationSyntax or StructDeclarationSyntax or RecordDeclarationSyntax,
+                static (target, attr) =>
+                    attr is { AttributeClass.TypeArguments: [{ } to], ConstructorArguments: [{ Value: int mapKind }, { Value: int ignore }, ..] }
+                        ? new BindRequest(TypeRef.From(target as ITypeSymbol), TypeRef.From(to), (MappingKind)mapKind, (IgnoreBind)ignore)
+                        : default);
+
+        var assemblyLevel = FindMapperAttributes(
+                context,
+                "SourceCrafter.Mapifier.Attributes.BindAttribute`2",
+                static n => n is CompilationUnitSyntax,
+                static (_, attr) =>
+                    attr is { AttributeClass.TypeArguments: [{ } from, { } to], ConstructorArguments: [{ Value: int mapKind }, { Value: int ignore }, ..] }
+                        ? new BindRequest(TypeRef.From(from), TypeRef.From(to), (MappingKind)mapKind, (IgnoreBind)ignore)
+                        : default);
+
+        var requests = assemblyLevel.Concat(classLevel).WithTrackingName("BindRequests");
+
+        // Discovery needs the Compilation, so this step reruns whenever the compilation changes.
+        // That is safe: the whole object graph it builds is created and discarded inside the step,
+        // and only strings come back out.
+        var sources = enums
+            .Combine(requests)
+            .Combine(context.CompilationProvider)
+            .Select(static (input, token) =>
+            {
+                var ((enumRefs, bindRequests), compilation) = input;
+
+                return Emit(compilation, enumRefs, bindRequests, token);
+            })
+            .WithTrackingName("GeneratedSources");
+
+        context.RegisterSourceOutput(sources, static (ctx, generated) =>
+        {
+            foreach (var source in generated)
+                ctx.AddSource(source.HintName, source.Text);
+        });
+    }
+
+    /// <summary>
+    /// Runs a complete generation pass: a fresh parser reads the compilation, and the emitter
+    /// renders whatever it finds. Both are discarded when the call returns, so no compilation is
+    /// rooted between runs of the pipeline.
+    /// </summary>
+    internal static EquatableArray<GeneratedSource> Emit(
+        Compilation compilation,
+        EquatableArray<TypeRef> enums,
+        EquatableArray<BindRequest> requests,
+        CancellationToken cancellationToken)
+    {
         try
         {
-#if DEBUG_SG
-            Debugger.Launch();
-#endif
-            var d = FindMapperAttributes(context,
-                "SourceCrafter.Mapifier.Attributes.ExtendAttribute`1",
-                static n => true,
-                static (targetSymbol, model, attr) => attr.AttributeClass?.TypeArguments[0]!)
-                .Combine(
-                    FindMapperAttributes(context,
-                    "SourceCrafter.Mapifier.Attributes.ExtendAttribute",
-                    static n => n is EnumDeclarationSyntax,
-                    static (targetSymbol, model, attr) => (ITypeSymbol)targetSymbol)
-                    .Combine(
-                        FindMapperAttributes(context,
-                            "SourceCrafter.Mapifier.Attributes.BindAttribute`1",
-                            static n => n is ClassDeclarationSyntax,
-                            static (targetSymbol, model, attr) =>
-                                attr is { AttributeClass.TypeArguments: [{ } target], ConstructorArguments: [{ Value: int mapKind }, { Value: int ignore }, ..] }
-                                    ? new MapInfo(
-                                            (ITypeSymbol)targetSymbol,
-                                            target,
-                                            (MappingKind)mapKind,
-                                            (IgnoreBind)ignore)
-                                    : default)
-                        .Combine(
-                            FindMapperAttributes(
-                                context,
-                                "SourceCrafter.Mapifier.Attributes.BindAttribute`2",
-                                static n => n is CompilationUnitSyntax,
-                                static (_, model, attr) =>
-                                    attr is { AttributeClass.TypeArguments: [{ } target, { } source], ConstructorArguments: [{ Value: int mapKind }, { Value: int ignore }, ..] }
-                                        ? new MapInfo(
-                                            target,
-                                            source,
-                                            (MappingKind)mapKind,
-                                            (IgnoreBind)ignore)
-                                        : default))));
-
-            context.RegisterSourceOutput(context.CompilationProvider.Combine(d), (ctx, info)
-                =>
-            {
-                var (compilation, (enums, (enums2, (assembly, classes)))) = info;
-                
-                BuildCode(
-                    ctx.AddSource,
-                    compilation,
-                    enums.Concat(enums2).Distinct(SymbolEqualityComparer.Default).Cast<ITypeSymbol>().ToImmutableArray(),
-                    classes,
-                    assembly);
-            });
-
+            return new Emitter(new MappingParser(compilation, cancellationToken), cancellationToken)
+                .Emit(enums, requests);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception e)
         {
             Trace.Write($"[SourceCrafter.Mapifier Exception] {e}");
+
+            return ImmutableArray<GeneratedSource>.Empty;
         }
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void BuildCode(
-        Action<string, string> addSource,
-        Compilation compilation,
-        ImmutableArray<ITypeSymbol> enums,
-        ImmutableArray<MapInfo> classesLevel,
-        ImmutableArray<MapInfo> assembliesLevel)
-    {
-        TypeSet typeSet = new(compilation);
-
-        SortedSet<string> enumPropertyNameSet = new(StringComparer.OrdinalIgnoreCase);
-
-        var set = new MappingSet(compilation, typeSet);
-
-        var generatedLock = false;
-
-        foreach (var enumType in enums)
-        {
-            var type = typeSet.GetOrAdd(enumType);
-
-            StringBuilder code = new();
-            var len = code.Length;
-
-            type.BuildEnumMethods(code);
-
-            if (len == code.Length) return;
-
-            const string head = @"#nullable enable
-namespace SourceCrafter.Mapifier;
-
-public static partial class EnumExtensions
-{";
-            var propertyName = BuildProperty(type, enumPropertyNameSet);
-
-            code.Insert(0, head);
-
-            code.Insert(head.Length, @$"
-    public const {type.NotNullFullName} {propertyName}Enum = default;
-");
-
-            if (!generatedLock)
-            {
-                generatedLock = true;
-
-                code.Insert(head.Length, @"
-    private static object __lock = new();");
-            }
-
-            code.Append(@"
-}");
-
-            addSource(type.ExportFullName.Replace("global::", ""), code.ToString());
-        }
-
-        foreach (var info in assembliesLevel)
-            if (info.Generate)
-                set.TryAdd(info.From, info.To, info.Ignore, info.MapKind, addSource);
-
-        foreach (var info in classesLevel)
-            if (info.Generate)
-                set.TryAdd(info.From, info.To, info.Ignore, info.MapKind, addSource);
-    }
-
-    private static string BuildProperty(TypeMeta type, SortedSet<string> enumPropertyNameSet)
-    {
-        if (enumPropertyNameSet.Add(type.SanitizedName)) return type.SanitizedName;
-
-        var parentNamespace = type.Type.ContainingType ?? (ISymbol?)type.Type.ContainingAssembly;
-
-        var sanitizedName = type.SanitizedName;
-
-        if (parentNamespace is not null)
-
-            do
-            {
-                if (enumPropertyNameSet.Add(sanitizedName = parentNamespace.Name + sanitizedName)) return sanitizedName;
-
-                if ((parentNamespace = parentNamespace!.ContainingType ?? (ISymbol?)parentNamespace.ContainingAssembly) is null)
-                    break;
-
-            } while (true);
-
-        var i = 0;
-
-        while (!enumPropertyNameSet.Add(sanitizedName + ++i)) ;
-
-        return sanitizedName + i;
-    }
-
-    private IncrementalValueProvider<ImmutableArray<T>> FindMapperAttributes<T>(
+    private static IncrementalValueProvider<EquatableArray<T>> FindMapperAttributes<T>(
         IncrementalGeneratorInitializationContext context,
         string attrFullQualifiedName,
         Predicate<SyntaxNode> predicate,
-        Func<ISymbol, SemanticModel, AttributeData, T> selector
-    ) =>
-        context.SyntaxProvider
-            .ForAttributeWithMetadataName(
-                attrFullQualifiedName,
-                (n, _) => predicate(n),
-                (gasc, _) => gasc.Attributes.Select(attr => selector(gasc.TargetSymbol, gasc.SemanticModel, attr)))
-            .SelectMany((i, _) => i)
-            .Collect();
+        Func<ISymbol, AttributeData, T> selector)
+        where T : IEquatable<T>
+        =>
+            context.SyntaxProvider
+                .ForAttributeWithMetadataName(
+                    attrFullQualifiedName,
+                    (n, _) => predicate(n),
+                    (gasc, _) => gasc.Attributes.Select(attr => selector(gasc.TargetSymbol, attr)).ToImmutableArray())
+                .SelectMany(static (i, _) => i)
+                .Collect()
+                .Select(static (values, _) => new EquatableArray<T>(values));
+}
 
+internal static class ProviderExtensions
+{
+    internal static IncrementalValueProvider<EquatableArray<T>> Concat<T>(
+        this IncrementalValueProvider<EquatableArray<T>> left,
+        IncrementalValueProvider<EquatableArray<T>> right)
+        where T : IEquatable<T>
+        =>
+            left.Combine(right).Select(static (pair, _) =>
+                new EquatableArray<T>(pair.Left.Values.AddRange(pair.Right.Values)));
 }
