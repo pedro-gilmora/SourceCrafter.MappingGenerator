@@ -93,7 +93,6 @@ public interface IContactableUser
     List<IContact> Contacts { get; }
 }
 
-[JsonConverter(typeof(JsonNumberEnumConverter<byte>))]
 public enum ContactType
 {
     Email,

@@ -61,3 +61,8 @@
 #*.PDF   diff=astextplain
 #*.rtf   diff=astextplain
 #*.RTF   diff=astextplain
+
+###############################################################################
+# Shell scripts must keep LF endings so they run on Linux CI runners.
+###############################################################################
+*.sh text eol=lf

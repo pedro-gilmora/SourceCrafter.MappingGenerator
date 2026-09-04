@@ -42,20 +42,48 @@ jobs:
         if: github.ref_name == 'dev'
         run: |
           created_year=$( date -d @${{ github.event.repository.created_at }} +%Y )
-          version=""$(( $(date --date='now' +%Y) - $created_year )).$(date +%y).$(date +%j).$(( $(date +%H%M) / 5 ))""
+          time_num=$(date +%H%M | sed 's/^0*//')  # Remove leading zeros to avoid octal interpretation
+          time_num=${time_num:-0}  # Handle case where all digits are 0
+          version=""$(( $(date --date='now' +%Y) - $created_year )).$(date +%y).$(date +%j).$(( $time_num / 5 ))""
           echo "VERSION=${version}" >> $GITHUB_ENV
-          
+
           .github/scripts/run-step.sh "Pack errors" dotnet pack SourceCrafter.Mapifier/SourceCrafter.Mapifier.csproj --verbosity normal -c Pack /p:PackageVersion="$version"
 
       - name: Publish to Nuget
         id: publish
         if: github.ref_name == 'dev' && startsWith(github.event.head_commit.message, '[Release]')
         run: |
-          package="$(find . -wholename '**/Pack/*.nupkg' -exec echo "{}" \;)"
-          
-          .github/scripts/run-step.sh "Publish errors" dotnet nuget push $package --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json
+          declare -A packages
 
-      - name: Notify Release to Github & Telegram
+          for package in $(find . -wholename '**/Pack/*.nupkg'); do
+            filename=$(basename "$package" .nupkg)
+            package_name="${filename%%.[0-9]*}"   # everything before the first dot+digit
+            version="${filename##$package_name.}" # everything after
+            packages[$package_name]=$version
+
+            # Execute nuget push for each package
+            output=$(dotnet nuget push "$package" --api-key ${{ secrets.NUGET_API_KEY }} --source "https://api.nuget.org/v3/index.json" 2>&1)
+
+            if [ $? -ne 0 ]; then
+              # Remove from packages
+              unset packages["$package_name"]
+
+              # Log the entire output, not just filtered lines
+              echo -e "Publish errors for $package:\n$output\n" >> errors.log
+            fi
+          done
+
+          json_parts=()
+          for name in "${!packages[@]}"; do
+            json_parts+=("{\"package\":\"$name\",\"version\":\"${packages[$name]}\"}")
+          done
+
+          # Join with commas using IFS
+          json=$(IFS=,; echo "[${json_parts[*]}]")
+
+          echo "$json" >> nuget_pkgs.json
+
+      - name: Notify Telegram & GitHub Release
         if: always()
         shell: pwsh
         env:
@@ -67,11 +95,31 @@ jobs:
             $githubEvent = Get-Content -Path ./github_event.json -Raw | ConvertFrom-Json
           }
 
-          # Load errors from errors.log
+          #Read published telegram packages
+          $packages = $( $( if( Test-Path "nuget_pkgs.json" ) { Get-Content -Path nuget_pkgs.json -Raw } else { "[]" } ) | ConvertFrom-Json | Sort-Object { $_.package.Length })
+
+          $telegramPackages, $githubPackages = if($packages){
+          @"
+          ---
+          ### Packages
+
+          | Package Name | Package Version |
+          |---|---|$($packages | Sort-Object { $_.package.Length } | ForEach-Object { "
+          | $($_.package) | [$($_.version)](https://www.nuget.org/packages/$($_.package)/$($_.version)) |" })"
+          "@,
+          @"
+          ---
+          ### Packages
+          $($packages | Sort-Object { $_.package.Length } | ForEach-Object { "
+          [![$($_.package): $($_.version)](https://img.shields.io/nuget/v/$($_.package).svg?label=$($_.package)&style=plastic)](https://www.nuget.org/packages/$($_.package)/$($_.version))" })
+          "@
+          } else {"",""}
+
+          # Load errors from errors logs file
           $errors = ""
           if (Test-Path "./errors.log") {
             echo "Found errors log file"
-            $errors = Get-Content -Path "./errors.log" -Raw
+            $errors = $( Get-Content -Path "./errors.log" )
           }
 
           echo "These are the errors: [$errors]"
@@ -91,9 +139,7 @@ jobs:
           $commits = [System.Collections.Stack]::new( $githubEvent.commits )
           $failed = '${{ job.status }}' -eq 'failure'
 
-          #echo $commits
-
-          $status, $icon, $message = if ($failed) {
+          $status, $icon, $message = if ($failed -or $errors) {
             'failed', '💥', $errors
           } elseif ('${{ job.status }}' -eq 'success') {
             'successfully completed', '✅', $headCommit
@@ -101,28 +147,44 @@ jobs:
             'cancelled', '⛔', 'User aborted the action'
           }
 
+          $jobId, $jobName = (gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs --jq '.jobs[0] | "\(.id)|\(.name)"') -split '\|', 2
+
           $message = @"
-          🚀 *$(escape '${{ github.workflow }}')* \#${{ github.run_number }} Build $status $icon
-          👤 *Triggered by:* [$( escape "${{ github.triggering_actor }}" )](https://github.com/$( escape "${{ github.triggering_actor }}" ))
-          🌿 *Branch:* $( escape "${{ github.ref_name }}" )
-          🔗 *Change:* *[$( $githubEvent.head_commit.id.Substring(0,8) )]($( escape $githubEvent.head_commit.url ))*
-  
-          *$(escape ( releaseTrimming $githubEvent.head_commit.message) )*$(if($commits.Count -gt 1 ) { "
-          
+          # 🚀 $(escape '${{ github.workflow }}') \#${{ github.run_number }} 
+
+          $icon Build $status 
+
+          👤 **Triggered by:** [${{ github.triggering_actor }}](https://github.com/${{ github.triggering_actor }})
+
+          🌿 **Branch:** ${{ github.ref_name }}
+
+          🔗 **Change:** [$( $githubEvent.head_commit.id.Substring(0,8) )]($( $githubEvent.head_commit.url ))
+
+          ⚙️ **Job** [$jobName](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/job/$jobId)
+
+          ---  
+          ### $(escape ( releaseTrimming $githubEvent.head_commit.message) )$(if($commits.Count -gt 1 ) { "
+          #### Other changes
+
+          | Commit Id | Description | Author |
+          |---|---|---|
           $([string]::Join("
           ", $( $commits | 
           Select -Skip 1 | 
           ForEach-Object { 
-              "🔹[$($_.id.Substring(0,8))]($(escape $_.url)): $(escape ( releaseTrimming $_.message ) )
-            by [$(escape $_.author.username)]($( escape https://github.com/$($_.author.username) ))"
+              "| [$( $_.id.Substring(0,8) )]($( $_.url )) | $( escape ( releaseTrimming $_.message ) ) | [$( $_.author.username )](https://github.com/$($_.author.username)) |"
           })))"
           })$( if($errors) { "
-          
+          ---
+          #### Errors
+
           ``````
           $( escape $errors.Trim() )
           ``````" } )
+
+          $telegramPackages
           "@
-          
+
           if( $isRelease -and -not $failed ) 
           {
             gh release create v${{ env.VERSION }} -t "$(releaseTrimming $githubEvent.head_commit.message)" -n $(if($commits.Count -gt 1) { "| ID | Message | Author |
@@ -132,18 +194,20 @@ jobs:
               Select -Skip 1 | 
               ForEach-Object { 
                 "| [$($_.id.Substring(0,8))]($($_.url)) | $( releaseTrimming $_.message ) | [$( $_.author.username )]( https://github.com/$($_.author.username) ) |"
-            })))"
-            } else { "" }) 
+            })))
+
+            ### Packages
+            $githubPackages"
+            } else { "$githubPackages" }) 
           }
-  
+
           Write-Host $message
 
-          $uri = "https://api.telegram.org/bot${{ secrets.TGBOT_TOKEN }}/sendMessage"
+          $uri = "https://api.telegram.org/bot${{ secrets.TGBOT_TOKEN }}/sendRichMessage"
 
           $body = @{
             chat_id = ${{ secrets.SC_CHATID }}
-            text = $message
-            parse_mode = 'MarkdownV2'
+            rich_message = @{ markdown = $message } | ConvertTo-Json
             message_thread_id = 4
           }
 
