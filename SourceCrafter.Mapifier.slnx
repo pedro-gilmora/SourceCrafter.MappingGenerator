@@ -1,4 +1,4 @@
-﻿<Solution>
+<Solution>
   <Configurations>
     <BuildType Name="Debug" />
     <BuildType Name="Debug SG" />
@@ -13,6 +13,10 @@
   <Folder Name="/Solution Items/">
     <File Path=".editorconfig" />
   </Folder>
+  <Project Path="NewGenerator/NewGenerator.csproj" Id="aee858b2-db0f-4225-b843-b46f68dc9ced">
+    <BuildType Solution="Debug SG|*" Project="Debug" />
+    <BuildType Solution="Pack|*" Project="Debug" />
+  </Project>
   <Project Path="SourceCrafter.Mapifier.UnitTests\SourceCrafter.Mapifier.UnitTests.csproj" />
   <Project Path="SourceCrafter.Mapifier\SourceCrafter.Mapifier.csproj" />
 </Solution>

@@ -65,6 +65,10 @@
 		  <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
 		<PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.7.0" />
+		<!-- Compile-time only: the version Roslyn 4.7.0 brings in predates CollectionBuilderAttribute,
+			 so collection expressions cannot target ImmutableArray<T> without it. The analyzer host
+			 supplies the actual assembly at run time. -->
+		<PackageReference Include="System.Collections.Immutable" Version="8.0.0" PrivateAssets="all" />
 		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" PrivateAssets="all" GeneratePathProperty="true" />
 		<PackageReference Include="SourceCrafter.DependencyInjection.Interop" Version="0.24.294.5" />
 		<PackageReference Include="System.Diagnostics.Tools" Version="4.3.0" />

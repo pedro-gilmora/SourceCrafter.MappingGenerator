@@ -3,7 +3,7 @@
 
 using SourceCrafter.Mapifier.Attributes;
 using SourceCrafter.Mapifier.UnitTests;
-
+using SourceCrafter.Mapifier.UnitTests.Models;
 using System.Collections.ObjectModel;
 using System.Text.Json.Serialization;
 

@@ -8,7 +8,7 @@
 
 using SourceCrafter.Mapifier.UnitTests;
 
-namespace SourceCrafter.UnitTests;
+namespace SourceCrafter.Mapifier.UnitTests.Models;
 
 //[DefaultMap<User>]
 public interface IUserPerson

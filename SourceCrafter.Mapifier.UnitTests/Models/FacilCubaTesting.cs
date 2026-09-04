@@ -3,9 +3,9 @@ using System.Transactions;
 using FluentAssertions;
 using Xunit;
 using SourceCrafter.Mvvm.Attributes;
+using SourceCrafter.Mapifier;
 
-
-namespace SourceCrafter.Mapifier.UnitTests
+namespace SourceCrafter.Mapifier.UnitTests.Models
 {
     public class FacilCubaTesting
     {

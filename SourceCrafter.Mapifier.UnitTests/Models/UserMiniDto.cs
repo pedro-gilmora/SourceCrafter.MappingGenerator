@@ -1,6 +1,6 @@
 ﻿//using SourceCrafter.Mapping.Attributes;
 
-namespace SourceCrafter.UnitTests;
+namespace SourceCrafter.Mapifier.UnitTests.Models;
 
 //[Map<User>]
 public partial class UserMiniDto
