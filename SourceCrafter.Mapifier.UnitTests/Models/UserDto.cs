@@ -8,12 +8,12 @@
 
 using SourceCrafter.Mapifier.Attributes;
 using SourceCrafter.Mapifier.UnitTests;
-
+using SourceCrafter.UnitTests;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Xml;
 
-namespace SourceCrafter.UnitTests;
+namespace SourceCrafter.Mapifier.UnitTests.Models;
 
 public partial class UserDto
 {

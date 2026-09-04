@@ -13,6 +13,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using SourceCrafter.Mapifier.Attributes;
 using SourceCrafter.Mapifier.Helpers;
 using SourceCrafter.Mapifier.Constants;
+using SourceCrafter.Mapifier.UnitTests.Models;
 using SourceCrafter.UnitTests;
 
 namespace SourceCrafter.Mapifier.UnitTests;

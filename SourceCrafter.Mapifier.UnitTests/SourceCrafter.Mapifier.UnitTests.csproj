@@ -6,8 +6,20 @@
 		<Nullable>enable</Nullable>
 		<LangVersion>latest</LangVersion>
 		<Configurations>Debug;Release;Test;Pack;Debug SG</Configurations>
+		<!--<EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+		<CompilerGeneratedFilesOutputPath>Mappings</CompilerGeneratedFilesOutputPath>-->
 	</PropertyGroup>
-	
+
+	<!--
+		EmitCompilerGeneratedFiles writes the generator output inside the project folder, where the
+		SDK's default Compile glob would pick it up on the next build and compile every generated
+		member twice (CS0101/CS0102/CS0111). Keep the files visible for inspection, but never compile them.
+	-->
+	<!--<ItemGroup>
+		<Compile Remove="$(CompilerGeneratedFilesOutputPath)\**\*.cs" />
+		<None Include="$(CompilerGeneratedFilesOutputPath)\**\*.cs" />
+	</ItemGroup>-->
+
 	<ItemGroup>
 		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
 		<PackageReference Include="FluentAssertions" Version="6.12.0" PrivateAssets="all" />

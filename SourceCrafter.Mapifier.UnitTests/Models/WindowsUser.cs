@@ -2,7 +2,7 @@
 using SourceCrafter.Mapifier.Constants;
 using SourceCrafter.UnitTests;
 
-namespace SourceCrafter.Mapifier.UnitTests;
+namespace SourceCrafter.Mapifier.UnitTests.Models;
 
 public partial class WindowsUser
 {

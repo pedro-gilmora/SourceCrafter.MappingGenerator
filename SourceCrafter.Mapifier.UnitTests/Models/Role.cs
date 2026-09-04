@@ -4,7 +4,7 @@
 
 //Testing purpose
 
-namespace SourceCrafter.UnitTests;
+namespace SourceCrafter.Mapifier.UnitTests.Models;
 
 public struct Role
 {
