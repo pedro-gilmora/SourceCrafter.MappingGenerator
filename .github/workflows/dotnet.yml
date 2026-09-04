@@ -20,6 +20,9 @@ jobs:
           ${{ toJson(github.event) }}
           EOF
 
+      - name: Make CI scripts executable
+        run: chmod +x .github/scripts/run-step.sh
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v3
         with:
@@ -27,29 +30,13 @@ jobs:
 
       - name: Restore dependencies
         run: |
-          output=$(dotnet restore SourceCrafter.Mapifier/SourceCrafter.Mapifier.csproj | awk '/: error / { print }')
-          
-          if [ "${#output}" -ne 0 ]; then
-            echo -e "Test errors:
-          $output" >> errors.log
-          fi
-          
-          output=$(dotnet restore SourceCrafter.Mapifier.UnitTests/SourceCrafter.Mapifier.UnitTests.csproj | awk '/: error / { print }')
-          
-          if [ "${#output}" -ne 0 ]; then
-            echo -e "Test errors:
-          $output" >> errors.log
-          fi     
+          .github/scripts/run-step.sh "Restore errors" dotnet restore SourceCrafter.Mapifier/SourceCrafter.Mapifier.csproj
+          .github/scripts/run-step.sh "Restore errors" dotnet restore SourceCrafter.Mapifier.UnitTests/SourceCrafter.Mapifier.UnitTests.csproj
 
       - name: Test
         id: test
         run: |
-          output=$(dotnet test SourceCrafter.Mapifier.UnitTests/SourceCrafter.Mapifier.UnitTests.csproj -c Release | awk '/: error / { print }')
-  
-          if [ "${#output}" -ne 0 ]; then
-            echo -e "Test errors:
-          $output" >> errors.log
-          fi
+          .github/scripts/run-step.sh "Test errors" dotnet test SourceCrafter.Mapifier.UnitTests/SourceCrafter.Mapifier.UnitTests.csproj -c Release
 
       - name: Pack
         if: github.ref_name == 'dev'
@@ -58,12 +45,7 @@ jobs:
           version=""$(( $(date --date='now' +%Y) - $created_year )).$(date +%y).$(date +%j).$(( $(date +%H%M) / 5 ))""
           echo "VERSION=${version}" >> $GITHUB_ENV
           
-          output=$(dotnet pack SourceCrafter.Mapifier/SourceCrafter.Mapifier.csproj --verbosity normal -c Pack /p:PackageVersion="$version" | awk '/: error / { print }')
-          
-          if [ "${#output}" -ne 0 ]; then
-            echo -e "Pack errors:
-          $output" >> errors.log
-          fi
+          .github/scripts/run-step.sh "Pack errors" dotnet pack SourceCrafter.Mapifier/SourceCrafter.Mapifier.csproj --verbosity normal -c Pack /p:PackageVersion="$version"
 
       - name: Publish to Nuget
         id: publish
@@ -71,12 +53,7 @@ jobs:
         run: |
           package="$(find . -wholename '**/Pack/*.nupkg' -exec echo "{}" \;)"
           
-          output=$(dotnet nuget push $package --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json | awk '/: error / { print }')
-          
-          if [ "${#output}" -ne 0 ]; then
-            echo -e "Publish errors:
-          $output" >> errors.log
-          fi
+          .github/scripts/run-step.sh "Publish errors" dotnet nuget push $package --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json
 
       - name: Notify Release to Github & Telegram
         if: always()
@@ -94,7 +71,7 @@ jobs:
           $errors = ""
           if (Test-Path "./errors.log") {
             echo "Found errors log file"
-            $errors = $( Get-Content -Path "./errors.log" )
+            $errors = Get-Content -Path "./errors.log" -Raw
           }
 
           echo "These are the errors: [$errors]"
